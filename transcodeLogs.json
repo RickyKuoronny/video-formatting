@@ -1,1 +1,8 @@
-[]
+[
+  {
+    "input": "uploads/4cd598ce8faa1d551c83c874ffa3b51e",
+    "output": "/home/ubuntu/video-formatting/outputs/output_1756266036364.mp4",
+    "resolution": "640x360",
+    "completedAt": "2025-08-27T03:43:55.941Z"
+  }
+]
