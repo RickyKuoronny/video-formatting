@@ -52,7 +52,6 @@ function authenticate(req, res, next) {
 }
 
 // UPLOAD + TRANSCODE (protected)
-// UPLOAD + TRANSCODE (protected)
 app.post('/upload', authenticate, upload.single('video'), (req, res) => {
   const { resolution } = req.body;
   if (!req.file || !resolution) return res.status(400).json({ error: 'Missing file or resolution' });
@@ -64,33 +63,12 @@ app.post('/upload', authenticate, upload.single('video'), (req, res) => {
 
   const startTime = new Date().toISOString();
 
-  // Array to store CPU usage samples
-  const cpuSamples = [];
-  let sampling = true;
-
-  // Recursive CPU sampling function
-  function sampleCpu() {
-    if (!sampling) return;
-    os.cpuUsage(v => {
-      cpuSamples.push(v * 100);
-      setTimeout(sampleCpu, 1000); // next sample in 1s
-    });
-  }
-
-  // Start sampling
-  sampleCpu();
-
   ffmpeg(inputPath)
     .setFfmpegPath(ffmpegPath)
     .videoCodec('libx264')
     .size(resolution)
     .on('end', () => {
-      sampling = false; // stop sampling
-
       const endTime = new Date().toISOString();
-      const averageCpu = cpuSamples.length
-        ? (cpuSamples.reduce((a, b) => a + b, 0) / cpuSamples.length).toFixed(2) + '%'
-        : 'N/A';
 
       const logs = JSON.parse(fs.readFileSync(LOG_FILE, 'utf8'));
       logs.push({
@@ -99,15 +77,13 @@ app.post('/upload', authenticate, upload.single('video'), (req, res) => {
         resolution,
         startedAt: startTime,
         completedAt: endTime,
-        user: req.user.username,
-        averageCpu
+        user: req.user.username
       });
       fs.writeFileSync(LOG_FILE, JSON.stringify(logs, null, 2));
 
-      res.json({ message: 'Transcoding completed!', outputFile: `/download/${outputFile}`, averageCpu });
+      res.json({ message: 'Transcoding completed!', outputFile: `/download/${outputFile}` });
     })
     .on('error', (err) => {
-      sampling = false; // stop sampling on error
       res.status(500).json({ error: 'Transcoding failed' });
     })
     .save(outputPath);
