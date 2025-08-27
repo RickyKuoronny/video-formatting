@@ -44,18 +44,20 @@ app.post('/upload', upload.single('video'), (req, res) => {
   const outputFile = `output_${Date.now()}.mp4`;
   const outputPath = path.join(__dirname, 'outputs', outputFile);
 
-  // Ensure outputs folder exists
   if (!fs.existsSync(path.join(__dirname, 'outputs'))) {
     fs.mkdirSync(path.join(__dirname, 'outputs'));
   }
+
+  const startTime = new Date().toISOString(); // log start time
 
   ffmpeg(inputPath)
     .setFfmpegPath(ffmpegPath)
     .videoCodec('libx264')
     .size(resolution)
-    .on('start', () => console.log(`Transcoding started → ${resolution}`))
+    .on('start', () => console.log(`Transcoding started → ${resolution} at ${startTime}`))
     .on('end', () => {
-      console.log(`Transcoding completed → ${outputPath}`);
+      const endTime = new Date().toISOString(); // log end time
+      console.log(`Transcoding completed → ${outputPath} at ${endTime}`);
 
       // Save to logs
       const logs = JSON.parse(fs.readFileSync(LOG_FILE, 'utf8'));
@@ -63,7 +65,8 @@ app.post('/upload', upload.single('video'), (req, res) => {
         input: inputPath,
         output: outputPath,
         resolution,
-        completedAt: new Date().toISOString()
+        startedAt: startTime,    // added
+        completedAt: endTime     // renamed from completedAt to include end timestamp
       });
       fs.writeFileSync(LOG_FILE, JSON.stringify(logs, null, 2));
 
