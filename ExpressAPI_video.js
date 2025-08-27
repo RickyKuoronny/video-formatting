@@ -52,7 +52,8 @@ function authenticate(req, res, next) {
 }
 
 // UPLOAD + TRANSCODE (protected)
-app.post('/upload', authenticate, upload.single('video'), async (req, res) => {
+// UPLOAD + TRANSCODE (protected)
+app.post('/upload', authenticate, upload.single('video'), (req, res) => {
   const { resolution } = req.body;
   if (!req.file || !resolution) return res.status(400).json({ error: 'Missing file or resolution' });
 
@@ -64,21 +65,27 @@ app.post('/upload', authenticate, upload.single('video'), async (req, res) => {
   const startTime = new Date().toISOString();
 
   // Array to store CPU usage samples
-  let cpuSamples = [];
+  const cpuSamples = [];
+  let sampling = true;
 
-  // Sampling CPU every second
-  const cpuInterval = setInterval(() => {
+  // Recursive CPU sampling function
+  function sampleCpu() {
+    if (!sampling) return;
     os.cpuUsage(v => {
       cpuSamples.push(v * 100);
+      setTimeout(sampleCpu, 1000); // next sample in 1s
     });
-  }, 1000);
+  }
+
+  // Start sampling
+  sampleCpu();
 
   ffmpeg(inputPath)
     .setFfmpegPath(ffmpegPath)
     .videoCodec('libx264')
     .size(resolution)
     .on('end', () => {
-      clearInterval(cpuInterval); // stop sampling
+      sampling = false; // stop sampling
 
       const endTime = new Date().toISOString();
       const averageCpu = cpuSamples.length
@@ -100,7 +107,7 @@ app.post('/upload', authenticate, upload.single('video'), async (req, res) => {
       res.json({ message: 'Transcoding completed!', outputFile: `/download/${outputFile}`, averageCpu });
     })
     .on('error', (err) => {
-      clearInterval(cpuInterval); // stop sampling if error
+      sampling = false; // stop sampling on error
       res.status(500).json({ error: 'Transcoding failed' });
     })
     .save(outputPath);
