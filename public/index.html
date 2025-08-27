@@ -24,6 +24,7 @@
         max-width: 400px;  /* won't get too wide on large screens */
         text-align: center;
         box-sizing: border-box;
+        position: relative; 
     }
 
     form {
@@ -63,6 +64,17 @@
         display: none;
         margin-top: 10px;
         word-break: break-all;
+    }
+    #adminIcon {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    cursor: pointer;
+    font-size: 24px;
+    }
+
+    #adminIcon:hover {
+    /* Tooltip handled via title attribute */
     }
 
     /* Mobile adjustments */
@@ -104,12 +116,12 @@
 
   <p id="status"></p>
   <a id="download-link" href="#" download>⬇️ Download Transcoded Video</a>
-</div>
 
-<div id="adminPanel" style="display:none;">
-  <h3>⚡ Admin Panel</h3>
-  <p>CPU Usage: <span id="cpuUsage">0%</span></p>
-  <button id="refreshCpu">Refresh</button>
+  <!-- Admin Icon -->
+  <div id="adminIcon" title="CPU Usage: 0%" style="display:none;">
+    👤
+  </div>
+
 </div>
 
 <script>
@@ -139,7 +151,8 @@ async function fetchCpu() {
 }
 
 function showAdminPanel(token) {
-    adminPanel.style.display = 'block';
+    const adminIcon = document.getElementById('adminIcon');
+    adminIcon.style.display = 'block';
 
     async function fetchCpu() {
         try {
@@ -148,12 +161,12 @@ function showAdminPanel(token) {
             });
             if (res.ok) {
                 const data = await res.json();
-                cpuUsageEl.textContent = data.cpuUsage;
+                adminIcon.title = `CPU Usage: ${data.cpuUsage}`;
             } else {
-                cpuUsageEl.textContent = 'Error fetching CPU';
+                adminIcon.title = 'Error fetching CPU';
             }
         } catch (err) {
-            cpuUsageEl.textContent = 'Error fetching CPU';
+            adminIcon.title = 'Error fetching CPU';
         }
     }
 
@@ -163,10 +176,6 @@ function showAdminPanel(token) {
     // Auto-update every 5 seconds
     const intervalId = setInterval(fetchCpu, 5000);
 
-    // Optional: refresh button
-    refreshCpuBtn.onclick = fetchCpu;
-
-    // Optional: stop interval when logging out (if you implement logout)
     return intervalId;
 }
 
