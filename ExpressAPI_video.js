@@ -5,96 +5,79 @@ const ffmpegPath = require('ffmpeg-static');
 const fs = require('fs');
 const path = require('path');
 const cors = require('cors');
+const jwt = require('jsonwebtoken');
 
 const app = express();
 const PORT = 3000;
+const SECRET = 'mysecretkey'; // keep it secret in production
 
-// Enable CORS & JSON
 app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+app.use(express.static('public')); // serve index.html
 
-// Serve static frontend files
-app.use(express.static('public'));
-
-// Upload storage config
 const upload = multer({ dest: 'uploads/' });
-
-// Logs file path
 const LOG_FILE = path.join(__dirname, 'transcodeLogs.json');
 
-// Ensure logs file exists
-if (!fs.existsSync(LOG_FILE)) {
-  fs.writeFileSync(LOG_FILE, JSON.stringify([]));
+if (!fs.existsSync(LOG_FILE)) fs.writeFileSync(LOG_FILE, JSON.stringify([]));
+
+// Simple user database
+const users = [
+  { username: 'user1', password: 'pass1', role: 'standard' },
+  { username: 'admin', password: 'adminpass', role: 'admin' }
+];
+
+// LOGIN endpoint
+app.post('/login', (req, res) => {
+  const { username, password } = req.body;
+  const user = users.find(u => u.username === username && u.password === password);
+  if (!user) return res.status(401).json({ error: 'Invalid credentials' });
+
+  const token = jwt.sign({ username: user.username, role: user.role }, SECRET, { expiresIn: '1h' });
+  res.json({ token });
+});
+
+// Middleware to protect routes
+function authenticate(req, res, next) {
+  const authHeader = req.headers['authorization'];
+  if (!authHeader) return res.status(401).json({ error: 'No token provided' });
+
+  const token = authHeader.split(' ')[1];
+  jwt.verify(token, SECRET, (err, decoded) => {
+    if (err) return res.status(401).json({ error: 'Invalid token' });
+    req.user = decoded;
+    next();
+  });
 }
 
-// POST /upload → Upload + transcode directly
-app.post('/upload', upload.single('video'), (req, res) => {
+// UPLOAD + TRANSCODE (protected)
+app.post('/upload', authenticate, upload.single('video'), (req, res) => {
   const { resolution } = req.body;
-
-  if (!req.file) {
-    return res.status(400).json({ error: 'No video uploaded' });
-  }
-
-  if (!resolution) {
-    return res.status(400).json({ error: 'Resolution is required' });
-  }
+  if (!req.file || !resolution) return res.status(400).json({ error: 'Missing file or resolution' });
 
   const inputPath = req.file.path;
   const outputFile = `output_${Date.now()}.mp4`;
   const outputPath = path.join(__dirname, 'outputs', outputFile);
+  if (!fs.existsSync(path.join(__dirname, 'outputs'))) fs.mkdirSync(path.join(__dirname, 'outputs'));
 
-  if (!fs.existsSync(path.join(__dirname, 'outputs'))) {
-    fs.mkdirSync(path.join(__dirname, 'outputs'));
-  }
-
-  const startTime = new Date().toISOString(); // log start time
+  const startTime = new Date().toISOString();
 
   ffmpeg(inputPath)
     .setFfmpegPath(ffmpegPath)
     .videoCodec('libx264')
     .size(resolution)
-    .on('start', () => console.log(`Transcoding started → ${resolution} at ${startTime}`))
     .on('end', () => {
-      const endTime = new Date().toISOString(); // log end time
-      console.log(`Transcoding completed → ${outputPath} at ${endTime}`);
-
-      // Save to logs
+      const endTime = new Date().toISOString();
       const logs = JSON.parse(fs.readFileSync(LOG_FILE, 'utf8'));
-      logs.push({
-        input: inputPath,
-        output: outputPath,
-        resolution,
-        startedAt: startTime,    // added
-        completedAt: endTime     // renamed from completedAt to include end timestamp
-      });
+      logs.push({ input: inputPath, output: outputPath, resolution, startedAt: startTime, completedAt: endTime, user: req.user.username });
       fs.writeFileSync(LOG_FILE, JSON.stringify(logs, null, 2));
-
-      res.json({
-        message: 'Transcoding completed successfully!',
-        outputFile: `/download/${outputFile}`
-      });
+      res.json({ message: 'Transcoding completed!', outputFile: `/download/${outputFile}` });
     })
-    .on('error', (err) => {
-      console.error('Transcoding failed:', err);
-      res.status(500).json({ error: 'Transcoding failed' });
-    })
+    .on('error', (err) => res.status(500).json({ error: 'Transcoding failed' }))
     .save(outputPath);
 });
 
-// Allow downloading transcoded files
-app.get('/download/:fileName', (req, res) => {
-  const filePath = path.join(__dirname, 'outputs', req.params.fileName);
-  res.download(filePath);
-});
+app.get('/download/:fileName', (req, res) => res.download(path.join(__dirname, 'outputs', req.params.fileName)));
+app.get('/logs', authenticate, (req, res) => res.json(JSON.parse(fs.readFileSync(LOG_FILE, 'utf8'))));
 
-// GET /logs → View transcoding history
-app.get('/logs', (req, res) => {
-  const logs = JSON.parse(fs.readFileSync(LOG_FILE, 'utf8'));
-  res.json(logs);
-});
-
-// Start the server
-app.listen(3000, '0.0.0.0', () => {
-  console.log('Server running on port 3000');
-});
+app.listen(PORT, '0.0.0.0', () => console.log(`Server running on http://localhost:${PORT}`));

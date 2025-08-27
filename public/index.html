@@ -41,7 +41,16 @@
 <body>
   <div class="container">
     <h2>🎥 Video Transcoder</h2>
-    <form id="uploadForm">
+
+    <!-- LOGIN FORM -->
+    <form id="loginForm">
+      <input type="text" name="username" id="username" placeholder="Username" required />
+      <input type="password" name="password" id="password" placeholder="Password" required />
+      <button type="submit">Login</button>
+    </form>
+
+    <!-- VIDEO UPLOAD FORM -->
+    <form id="uploadForm" style="display:none;">
       <input type="file" name="video" id="video" accept="video/*" required />
       <select name="resolution" id="resolution" required>
         <option value="">Select Resolution</option>
@@ -51,35 +60,72 @@
       </select>
       <button type="submit">Transcode</button>
     </form>
+
     <p id="status"></p>
     <a id="download-link" href="#" download>⬇️ Download Transcoded Video</a>
   </div>
 
   <script>
-    const form = document.getElementById('uploadForm');
+    let jwtToken = '';
+
+    const loginForm = document.getElementById('loginForm');
+    const uploadForm = document.getElementById('uploadForm');
     const status = document.getElementById('status');
     const downloadLink = document.getElementById('download-link');
 
-    form.addEventListener('submit', async (e) => {
+    // LOGIN
+    loginForm.addEventListener('submit', async (e) => {
       e.preventDefault();
+      const formData = new FormData(loginForm);
+      const username = formData.get('username');
+      const password = formData.get('password');
+
+      try {
+        const response = await fetch('/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username, password })
+        });
+        const result = await response.json();
+        if (result.token) {
+          jwtToken = result.token;
+          status.textContent = '✅ Login successful!';
+          loginForm.style.display = 'none';
+          uploadForm.style.display = 'block';
+        } else {
+          status.textContent = '❌ Login failed!';
+        }
+      } catch (err) {
+        status.textContent = '❌ Login error!';
+      }
+    });
+
+    // VIDEO UPLOAD
+    uploadForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      if (!jwtToken) {
+        status.textContent = '❌ You must login first!';
+        return;
+      }
+
       status.textContent = 'Uploading & Transcoding... ⏳';
       downloadLink.style.display = 'none';
 
-      const formData = new FormData(form);
+      const formData = new FormData(uploadForm);
       try {
         const response = await fetch('/upload', {
           method: 'POST',
+          headers: { 'Authorization': `Bearer ${jwtToken}` },
           body: formData
         });
 
         const result = await response.json();
-
         if (result.outputFile) {
           status.textContent = '✅ Transcoding completed!';
           downloadLink.href = result.outputFile;
           downloadLink.style.display = 'block';
         } else {
-          status.textContent = '❌ Error: ' + result.error;
+          status.textContent = '❌ Error: ' + (result.error || 'Unknown');
         }
       } catch (error) {
         status.textContent = '❌ Something went wrong!';
