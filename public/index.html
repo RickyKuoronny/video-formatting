@@ -1,10 +1,10 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Video Transcoder</title>
-    <style>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Video Transcoder</title>
+ <style>
     body {
         font-family: Arial, sans-serif;
         background: #f4f4f4;
@@ -72,9 +72,17 @@
     cursor: pointer;
     font-size: 24px;
     }
-
-    #adminIcon:hover {
-    /* Tooltip handled via title attribute */
+    #adminPanel {
+        display: none;
+        position: absolute;
+        top: 0;
+        left: 420px;
+        width: 400px;
+        background: #fff;
+        border-radius: 10px;
+        box-shadow: 0 0 10px rgba(0,0,0,0.1);
+        padding: 20px;
+        text-align: center;
     }
 
     /* Mobile adjustments */
@@ -89,39 +97,39 @@
         }
     }
     </style>
-
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body>
+
 <div class="container">
-  <h2>🎥 Video Transcoder</h2>
+    <h2>🎥 Video Transcoder</h2>
 
-  <!-- LOGIN FORM -->
-  <form id="loginForm">
-    <input type="text" name="username" placeholder="Username" required />
-    <input type="password" name="password" placeholder="Password" required />
-    <button type="submit">Login</button>
-  </form>
+    <form id="loginForm">
+        <input type="text" name="username" placeholder="Username" required />
+        <input type="password" name="password" placeholder="Password" required />
+        <button type="submit">Login</button>
+    </form>
 
-  <!-- VIDEO UPLOAD FORM -->
-  <form id="uploadForm" style="display:none;">
-    <input type="file" name="video" accept="video/*" required />
-    <select name="resolution" required>
-      <option value="">Select Resolution</option>
-      <option value="640x360">360p</option>
-      <option value="1280x720">720p</option>
-      <option value="1920x1080">1080p</option>
-    </select>
-    <button type="submit">Transcode</button>
-  </form>
+    <form id="uploadForm" style="display:none;">
+        <input type="file" name="video" accept="video/*" required />
+        <select name="resolution" required>
+            <option value="">Select Resolution</option>
+            <option value="640x360">360p</option>
+            <option value="1280x720">720p</option>
+            <option value="1920x1080">1080p</option>
+        </select>
+        <button type="submit">Transcode</button>
+    </form>
 
-  <p id="status"></p>
-  <a id="download-link" href="#" download>⬇️ Download Transcoded Video</a>
+    <p id="status"></p>
+    <a id="download-link" href="#" download>⬇️ Download Transcoded Video</a>
 
-  <!-- Admin Icon -->
-  <div id="adminIcon" title="CPU Usage: 0%" style="display:none;">
-    👤
-  </div>
+<div id="adminIcon" title="Show Admin Panel" style="display:none;">👤</div>
 
+
+<div id="adminPanel">
+    <h3>⚡ Admin Panel</h3>
+    <canvas id="cpuChart" width="380" height="200"></canvas>
 </div>
 
 <script>
@@ -130,57 +138,13 @@ const loginForm = document.getElementById('loginForm');
 const uploadForm = document.getElementById('uploadForm');
 const status = document.getElementById('status');
 const downloadLink = document.getElementById('download-link');
+const adminIcon = document.getElementById('adminIcon');
 const adminPanel = document.getElementById('adminPanel');
-const cpuUsageEl = document.getElementById('cpuUsage');
-const refreshCpuBtn = document.getElementById('refreshCpu');
 
-// Function to fetch CPU usage for admin
-async function fetchCpu() {
-  if (!jwtToken) return;
-  try {
-    const res = await fetch('/cpu', {
-      headers: { 'Authorization': 'Bearer ' + jwtToken }
-    });
-    if (!res.ok) throw new Error('Access denied');
-    const data = await res.json();
-    cpuUsageEl.textContent = data.cpuUsage;
-  } catch (err) {
-    console.error(err);
-    cpuUsageEl.textContent = 'Cannot fetch CPU usage';
-  }
-}
+let cpuChart, intervalId;
+let cpuData = { labels: [], datasets: [{ label:'CPU Usage (%)', data:[], borderColor:'rgba(75,192,192,1)', fill:false, tension:0.3 }] };
 
-function showAdminPanel(token) {
-    const adminIcon = document.getElementById('adminIcon');
-    adminIcon.style.display = 'block';
-
-    async function fetchCpu() {
-        try {
-            const res = await fetch('/cpu', {
-                headers: { 'Authorization': 'Bearer ' + token }
-            });
-            if (res.ok) {
-                const data = await res.json();
-                adminIcon.title = `CPU Usage: ${data.cpuUsage}`;
-            } else {
-                adminIcon.title = 'Error fetching CPU';
-            }
-        } catch (err) {
-            adminIcon.title = 'Error fetching CPU';
-        }
-    }
-
-    // Initial fetch
-    fetchCpu();
-
-    // Auto-update every 5 seconds
-    const intervalId = setInterval(fetchCpu, 5000);
-
-    return intervalId;
-}
-
-
-// LOGIN
+// Login handler
 loginForm.addEventListener('submit', async (e) => {
     e.preventDefault();
     const formData = new FormData(loginForm);
@@ -188,12 +152,12 @@ loginForm.addEventListener('submit', async (e) => {
     const password = formData.get('password');
 
     try {
-        const response = await fetch('/login', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+        const res = await fetch('/login', {
+            method:'POST',
+            headers:{ 'Content-Type':'application/json' },
             body: JSON.stringify({ username, password })
         });
-        const result = await response.json();
+        const result = await res.json();
 
         if (result.token) {
             jwtToken = result.token;
@@ -201,51 +165,87 @@ loginForm.addEventListener('submit', async (e) => {
             loginForm.style.display = 'none';
             uploadForm.style.display = 'block';
 
+            // decode JWT to check role
             const payload = JSON.parse(atob(jwtToken.split('.')[1]));
             if (payload.role === 'admin') {
-                showAdminPanel(jwtToken); // show CPU panel for admins
+                // show admin icon only for admins
+                adminIcon.style.display = 'block';
             }
-
         } else {
             status.textContent = '❌ Login failed!';
         }
-    } catch (err) {
+    } catch(err) {
+        console.error(err);
         status.textContent = '❌ Login error!';
     }
 });
 
 
 
-// VIDEO UPLOAD
+// Upload handler
 uploadForm.addEventListener('submit', async (e) => {
-  e.preventDefault();
-  if (!jwtToken) {
-    status.textContent = '❌ You must login first!';
-    return;
-  }
+    e.preventDefault();
+    if (!jwtToken) { status.textContent = '❌ Login first!'; return; }
 
-  status.textContent = 'Uploading & Transcoding... ⏳';
-  downloadLink.style.display = 'none';
-  const formData = new FormData(uploadForm);
+    status.textContent = 'Uploading & Transcoding... ⏳';
+    downloadLink.style.display = 'none';
+    const formData = new FormData(uploadForm);
 
-  try {
-    const response = await fetch('/upload', {
-      method: 'POST',
-      headers: { 'Authorization': 'Bearer ' + jwtToken },
-      body: formData
-    });
-    const result = await response.json();
-    if (result.outputFile) {
-      status.textContent = '✅ Transcoding completed!';
-      downloadLink.href = result.outputFile;
-      downloadLink.style.display = 'block';
-    } else {
-      status.textContent = '❌ Error: ' + (result.error || 'Unknown');
+    try {
+        const res = await fetch('/upload', {
+            method:'POST',
+            headers:{ 'Authorization':'Bearer ' + jwtToken },
+            body: formData
+        });
+        const result = await res.json();
+        if (result.outputFile) {
+            status.textContent = '✅ Transcoding completed!';
+            downloadLink.href = result.outputFile;
+            downloadLink.style.display = 'block';
+        } else {
+            status.textContent = '❌ Error: ' + (result.error || 'Unknown');
+        }
+    } catch(err) {
+        console.error(err);
+        status.textContent = '❌ Something went wrong!';
     }
-  } catch (error) {
-    status.textContent = '❌ Something went wrong!';
-  }
 });
+
+// Admin panel toggle & chart
+adminIcon.onclick = () => {
+    if (adminPanel.style.display === 'none') {
+        adminPanel.style.display = 'block';
+
+        // initialize chart if first time
+        if (!cpuChart) {
+            const ctx = document.getElementById('cpuChart').getContext('2d');
+            cpuChart = new Chart(ctx, { type:'line', data: cpuData, options:{ scales:{ x:{ title:{ display:true, text:'Time' } }, y:{ min:0,max:100,title:{ display:true,text:'CPU Usage (%)' } } } } });
+        }
+
+        // fetch CPU every 5s
+        const fetchCpu = async () => {
+            try {
+                const res = await fetch('/cpu', { headers:{ 'Authorization':'Bearer ' + jwtToken } });
+                if (!res.ok) throw new Error('Access denied');
+                const data = await res.json();
+                const timestamp = new Date().toLocaleTimeString();
+
+                if (cpuData.labels.length >= 12) { cpuData.labels.shift(); cpuData.datasets[0].data.shift(); }
+                cpuData.labels.push(timestamp);
+                cpuData.datasets[0].data.push(parseFloat(data.cpuUsage));
+                cpuChart.update();
+            } catch(err){ console.error(err); }
+        };
+
+        fetchCpu();
+        intervalId = setInterval(fetchCpu, 5000);
+
+    } else {
+        adminPanel.style.display = 'none';
+        clearInterval(intervalId);
+    }
+};
 </script>
+
 </body>
 </html>

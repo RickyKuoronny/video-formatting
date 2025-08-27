@@ -52,7 +52,7 @@ function authenticate(req, res, next) {
 }
 
 // UPLOAD + TRANSCODE (protected)
-app.post('/upload', authenticate, upload.single('video'), (req, res) => {
+app.post('/upload', authenticate, upload.single('video'), async (req, res) => {
   const { resolution } = req.body;
   if (!req.file || !resolution) return res.status(400).json({ error: 'Missing file or resolution' });
 
@@ -63,18 +63,46 @@ app.post('/upload', authenticate, upload.single('video'), (req, res) => {
 
   const startTime = new Date().toISOString();
 
+  // Array to store CPU usage samples
+  let cpuSamples = [];
+
+  // Sampling CPU every second
+  const cpuInterval = setInterval(() => {
+    os.cpuUsage(v => {
+      cpuSamples.push(v * 100);
+    });
+  }, 1000);
+
   ffmpeg(inputPath)
     .setFfmpegPath(ffmpegPath)
     .videoCodec('libx264')
     .size(resolution)
     .on('end', () => {
+      clearInterval(cpuInterval); // stop sampling
+
       const endTime = new Date().toISOString();
+      const averageCpu = cpuSamples.length
+        ? (cpuSamples.reduce((a, b) => a + b, 0) / cpuSamples.length).toFixed(2) + '%'
+        : 'N/A';
+
       const logs = JSON.parse(fs.readFileSync(LOG_FILE, 'utf8'));
-      logs.push({ input: inputPath, output: outputPath, resolution, startedAt: startTime, completedAt: endTime, user: req.user.username });
+      logs.push({
+        input: inputPath,
+        output: outputPath,
+        resolution,
+        startedAt: startTime,
+        completedAt: endTime,
+        user: req.user.username,
+        averageCpu
+      });
       fs.writeFileSync(LOG_FILE, JSON.stringify(logs, null, 2));
-      res.json({ message: 'Transcoding completed!', outputFile: `/download/${outputFile}` });
+
+      res.json({ message: 'Transcoding completed!', outputFile: `/download/${outputFile}`, averageCpu });
     })
-    .on('error', (err) => res.status(500).json({ error: 'Transcoding failed' }))
+    .on('error', (err) => {
+      clearInterval(cpuInterval); // stop sampling if error
+      res.status(500).json({ error: 'Transcoding failed' });
+    })
     .save(outputPath);
 });
 
