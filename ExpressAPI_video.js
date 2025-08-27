@@ -36,21 +36,6 @@ app.post('/login', (req, res) => {
   
   const token = jwt.sign({ username: user.username, role: user.role }, SECRET, { expiresIn: '1h' });
   res.json({ token });
-
-  if (result.token) {
-    jwtToken = result.token;
-    textContent = '✅ Login successful!';
-    loginForm.style.display = 'none';
-    uploadForm.style.display = 'block';
-
-    // Show admin panel if user is admin
-    const payload = JSON.parse(atob(jwtToken.split('.')[1]));
-    if (payload.role === 'admin') {
-      showAdminPanel(jwtToken);
-      setInterval(() => fetchCpu(), 5000); // auto-update
-    }
-
-  }
 });
 
 // Middleware to protect routes
