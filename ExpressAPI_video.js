@@ -14,6 +14,9 @@ app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
+// Serve static frontend files
+app.use(express.static('public'));
+
 // Upload storage config
 const upload = multer({ dest: 'uploads/' });
 
@@ -25,36 +28,36 @@ if (!fs.existsSync(LOG_FILE)) {
   fs.writeFileSync(LOG_FILE, JSON.stringify([]));
 }
 
-// POST /upload → Upload a video
+// POST /upload → Upload + transcode directly
 app.post('/upload', upload.single('video'), (req, res) => {
+  const { resolution } = req.body;
+
   if (!req.file) {
-    return res.status(400).json({ error: 'No file uploaded' });
-  }
-  res.json({ message: 'File uploaded successfully', filePath: req.file.path });
-});
-
-// POST /transcode → Transcode video to chosen resolution
-app.post('/transcode', async (req, res) => {
-  const { inputPath, resolution } = req.body;
-
-  if (!inputPath || !resolution) {
-    return res.status(400).json({ error: 'Input path and resolution are required' });
+    return res.status(400).json({ error: 'No video uploaded' });
   }
 
+  if (!resolution) {
+    return res.status(400).json({ error: 'Resolution is required' });
+  }
+
+  const inputPath = req.file.path;
   const outputFile = `output_${Date.now()}.mp4`;
-  const outputPath = path.join(__dirname, outputFile);
+  const outputPath = path.join(__dirname, 'outputs', outputFile);
+
+  // Ensure outputs folder exists
+  if (!fs.existsSync(path.join(__dirname, 'outputs'))) {
+    fs.mkdirSync(path.join(__dirname, 'outputs'));
+  }
 
   ffmpeg(inputPath)
     .setFfmpegPath(ffmpegPath)
     .videoCodec('libx264')
     .size(resolution)
-    .on('start', () => {
-      console.log(`Starting transcoding: ${inputPath} → ${resolution}`);
-    })
+    .on('start', () => console.log(`Transcoding started → ${resolution}`))
     .on('end', () => {
-      console.log('Transcoding completed:', outputPath);
+      console.log(`Transcoding completed → ${outputPath}`);
 
-      // Save log entry
+      // Save to logs
       const logs = JSON.parse(fs.readFileSync(LOG_FILE, 'utf8'));
       logs.push({
         input: inputPath,
@@ -64,26 +67,31 @@ app.post('/transcode', async (req, res) => {
       });
       fs.writeFileSync(LOG_FILE, JSON.stringify(logs, null, 2));
 
-      res.json({ message: 'Transcoding completed', output: outputPath });
+      res.json({
+        message: 'Transcoding completed successfully!',
+        outputFile: `/download/${outputFile}`
+      });
     })
     .on('error', (err) => {
-      console.error('Transcoding error:', err);
+      console.error('Transcoding failed:', err);
       res.status(500).json({ error: 'Transcoding failed' });
     })
     .save(outputPath);
 });
 
-// GET /logs → View transcoding logs
+// Allow downloading transcoded files
+app.get('/download/:fileName', (req, res) => {
+  const filePath = path.join(__dirname, 'outputs', req.params.fileName);
+  res.download(filePath);
+});
+
+// GET /logs → View transcoding history
 app.get('/logs', (req, res) => {
   const logs = JSON.parse(fs.readFileSync(LOG_FILE, 'utf8'));
   res.json(logs);
 });
 
-// Root endpoint
-app.get('/', (req, res) => {
-  res.send('Video Transcoding API is running ✅');
-});
-
+// Start the server
 app.listen(PORT, () => {
-  console.log(`Server running on http://localhost:${PORT}`);
+  console.log(`🚀 Server running at http://localhost:${PORT}`);
 });

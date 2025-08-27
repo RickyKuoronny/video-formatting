@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Video Transcoder</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background: #f4f4f4;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+    }
+    .container {
+      background: #fff;
+      padding: 20px;
+      border-radius: 10px;
+      box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+      width: 400px;
+      text-align: center;
+    }
+    input, select, button {
+      margin-top: 10px;
+      padding: 10px;
+      width: 100%;
+      border-radius: 5px;
+      border: 1px solid #ccc;
+    }
+    #status {
+      margin-top: 15px;
+      font-weight: bold;
+    }
+    #download-link {
+      display: none;
+      margin-top: 10px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h2>🎥 Video Transcoder</h2>
+    <form id="uploadForm">
+      <input type="file" name="video" id="video" accept="video/*" required />
+      <select name="resolution" id="resolution" required>
+        <option value="">Select Resolution</option>
+        <option value="640x360">360p</option>
+        <option value="1280x720">720p</option>
+        <option value="1920x1080">1080p</option>
+      </select>
+      <button type="submit">Transcode</button>
+    </form>
+    <p id="status"></p>
+    <a id="download-link" href="#" download>⬇️ Download Transcoded Video</a>
+  </div>
+
+  <script>
+    const form = document.getElementById('uploadForm');
+    const status = document.getElementById('status');
+    const downloadLink = document.getElementById('download-link');
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      status.textContent = 'Uploading & Transcoding... ⏳';
+      downloadLink.style.display = 'none';
+
+      const formData = new FormData(form);
+      try {
+        const response = await fetch('/upload', {
+          method: 'POST',
+          body: formData
+        });
+
+        const result = await response.json();
+
+        if (result.outputFile) {
+          status.textContent = '✅ Transcoding completed!';
+          downloadLink.href = result.outputFile;
+          downloadLink.style.display = 'block';
+        } else {
+          status.textContent = '❌ Error: ' + result.error;
+        }
+      } catch (error) {
+        status.textContent = '❌ Something went wrong!';
+      }
+    });
+  </script>
+</body>
+</html>
