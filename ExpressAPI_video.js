@@ -6,6 +6,7 @@ const fs = require('fs');
 const path = require('path');
 const cors = require('cors');
 const jwt = require('jsonwebtoken');
+const os = require('os-utils');
 
 const app = express();
 const PORT = 3000;
@@ -32,9 +33,24 @@ app.post('/login', (req, res) => {
   const { username, password } = req.body;
   const user = users.find(u => u.username === username && u.password === password);
   if (!user) return res.status(401).json({ error: 'Invalid credentials' });
-
+  
   const token = jwt.sign({ username: user.username, role: user.role }, SECRET, { expiresIn: '1h' });
   res.json({ token });
+
+  if (result.token) {
+    jwtToken = result.token;
+    textContent = '✅ Login successful!';
+    loginForm.style.display = 'none';
+    uploadForm.style.display = 'block';
+
+    // Show admin panel if user is admin
+    const payload = JSON.parse(atob(jwtToken.split('.')[1]));
+    if (payload.role === 'admin') {
+      showAdminPanel(jwtToken);
+      setInterval(() => fetchCpu(), 5000); // auto-update
+    }
+
+  }
 });
 
 // Middleware to protect routes
@@ -76,6 +92,20 @@ app.post('/upload', authenticate, upload.single('video'), (req, res) => {
     .on('error', (err) => res.status(500).json({ error: 'Transcoding failed' }))
     .save(outputPath);
 });
+
+
+// Admin-only CPU endpoint
+app.get('/cpu', authenticate, (req, res) => {
+  // Only allow admins
+  if (req.user.role !== 'admin') {
+    return res.status(403).json({ error: 'Access denied. Admins only.' });
+  }
+
+  os.cpuUsage((v) => {
+    res.json({ cpuUsage: (v * 100).toFixed(2) + '%' });
+  });
+});
+
 
 app.get('/download/:fileName', (req, res) => res.download(path.join(__dirname, 'outputs', req.params.fileName)));
 app.get('/logs', authenticate, (req, res) => res.json(JSON.parse(fs.readFileSync(LOG_FILE, 'utf8'))));

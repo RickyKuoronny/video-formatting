@@ -4,39 +4,80 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Video Transcoder</title>
-  <style>
+    <style>
     body {
-      font-family: Arial, sans-serif;
-      background: #f4f4f4;
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      height: 100vh;
+        font-family: Arial, sans-serif;
+        background: #f4f4f4;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        min-height: 100vh;
+        margin: 0;
     }
+
     .container {
-      background: #fff;
-      padding: 20px;
-      border-radius: 10px;
-      box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
-      width: 400px;
-      text-align: center;
+        background: #fff;
+        padding: 20px;
+        border-radius: 10px;
+        box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+        width: 90%;
+        max-width: 400px;  /* won't get too wide on large screens */
+        text-align: center;
+        box-sizing: border-box;
     }
+
+    form {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 10px; /* spacing between inputs/buttons */
+    }
+
     input, select, button {
-      margin-top: 10px;
-      padding: 10px;
-      width: 100%;
-      border-radius: 5px;
-      border: 1px solid #ccc;
+        width: 90%;          /* dynamic width based on container */
+        max-width: 100%;     /* never overflow container */
+        padding: 10px;
+        border-radius: 5px;
+        border: 1px solid #ccc;
+        box-sizing: border-box;
+        font-size: 1rem;
     }
+
+    button {
+        cursor: pointer;
+        background-color: #4CAF50;
+        color: white;
+        border: none;
+    }
+
+    button:hover {
+        background-color: #45a049;
+    }
+
     #status {
-      margin-top: 15px;
-      font-weight: bold;
+        margin-top: 15px;
+        font-weight: bold;
     }
+
     #download-link {
-      display: none;
-      margin-top: 10px;
+        display: none;
+        margin-top: 10px;
+        word-break: break-all;
     }
-  </style>
+
+    /* Mobile adjustments */
+    @media (max-width: 500px) {
+        .container {
+        width: 95%;
+        padding: 15px;
+        }
+        input, select, button {
+        width: 100%;
+        font-size: 0.95rem;
+        }
+    }
+    </style>
+
 </head>
 <body>
   <div class="container">
@@ -64,7 +105,11 @@
     <p id="status"></p>
     <a id="download-link" href="#" download>⬇️ Download Transcoded Video</a>
   </div>
-
+  <div id="adminPanel" style="display:none;">
+    <h3>⚡ Admin Panel</h3>
+    <p>CPU Usage: <span id="cpuUsage">0%</span></p>
+    <button id="refreshCpu">Refresh</button>
+  </div>
   <script>
     let jwtToken = '';
 
@@ -72,6 +117,25 @@
     const uploadForm = document.getElementById('uploadForm');
     const status = document.getElementById('status');
     const downloadLink = document.getElementById('download-link');
+    const adminPanel = document.getElementById('adminPanel');
+    const cpuUsageEl = document.getElementById('cpuUsage');
+    const refreshCpuBtn = document.getElementById('refreshCpu');
+
+    function showAdminPanel(token) {
+        adminPanel.style.display = 'block';
+        async function fetchCpu() {
+            const res = await fetch('/cpu', {
+            headers: { 'Authorization': 'Bearer ' + token }
+            });
+            if (res.ok) {
+            const data = await res.json();
+            cpuUsageEl.textContent = data.cpuUsage;
+            }
+        }
+
+        fetchCpu();
+        refreshCpuBtn.onclick = fetchCpu;
+    }
 
     // LOGIN
     loginForm.addEventListener('submit', async (e) => {
