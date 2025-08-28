@@ -13,6 +13,8 @@ const PORT = 3000;
 const SECRET = 'mysecretkey'; // keep it secret in production
 
 app.use(cors());
+
+app.options('/upload', cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(express.static('public')); // serve index.html
