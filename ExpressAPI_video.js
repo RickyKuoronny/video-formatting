@@ -16,16 +16,14 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(express.static('public'));
 
-// ✅ CORS setup
+// ✅ CORS setup (full preflight support)
 const corsOptions = {
-  origin: '*', // Or restrict to your front-end domain
+  origin: '*',
   methods: ['GET', 'POST', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization']
 };
 app.use(cors(corsOptions));
-
-// Handle preflight for /upload specifically
-app.options('/upload', cors(corsOptions));
+app.options('*', cors(corsOptions)); // preflight for all routes
 
 const upload = multer({ dest: 'uploads/' });
 const LOG_FILE = path.join(__dirname, 'transcodeLogs.json');
@@ -61,17 +59,20 @@ function authenticate(req, res, next) {
   });
 }
 
-// --- UPLOAD + TRANSCODE ---
-app.post('/upload', authenticate, upload.single('video'), (req, res) => {
-  console.log('UPLOAD ROUTE HIT ✅', req.file);
+// --- UPLOAD + TRANSCODE (any file field) ---
+app.post('/upload', authenticate, upload.any(), (req, res) => {
+  console.log('UPLOAD ROUTE HIT ✅', req.files);
 
-  if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
+  if (!req.files || req.files.length === 0)
+    return res.status(400).json({ error: 'No file uploaded' });
 
-  const inputPath = req.file.path;
+  const file = req.files[0]; // take the first uploaded file
+  const inputPath = file.path;
+
   const outputDir = path.join(__dirname, 'outputs');
   if (!fs.existsSync(outputDir)) fs.mkdirSync(outputDir);
 
-  const outputFileName = `${Date.now()}-${req.file.originalname}`;
+  const outputFileName = `${Date.now()}-${file.originalname}`;
   const outputPath = path.join(outputDir, outputFileName);
 
   ffmpeg(inputPath)
@@ -93,7 +94,11 @@ app.post('/upload', authenticate, upload.single('video'), (req, res) => {
     });
 });
 
-// --- OTHER ENDPOINTS ---
-app.get('/download/:fileName', (req, res) => res.download(path.join(__dirname, 'outputs', req.params.fileName)));
+// --- DOWNLOAD ---
+app.get('/download/:fileName', (req, res) => {
+  const filePath = path.join(__dirname, 'outputs', req.params.fileName);
+  if (!fs.existsSync(filePath)) return res.status(404).json({ error: 'File not found' });
+  res.download(filePath);
+});
 
 app.listen(PORT, '0.0.0.0', () => console.log(`Server running on http://localhost:${PORT}`));
