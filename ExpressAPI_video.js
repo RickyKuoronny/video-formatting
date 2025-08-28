@@ -103,6 +103,21 @@ app.get('/cpu', authenticate, (req, res) => {
 });
 
 
+// Admin-only Log endpoint 
+app.get('/logs', authenticate, (req, res) => {
+    if (req.user.role !== 'admin') {
+        return res.status(403).json({ error: 'Access denied: Admins only' });
+    }
+
+    try {
+        const logs = fs.existsSync(LOG_FILE) ? JSON.parse(fs.readFileSync(LOG_FILE, 'utf8')) : [];
+        res.json(logs);
+    } catch (err) {
+        res.status(500).json({ error: 'Failed to fetch logs' });
+    }
+});
+
+
 app.get('/download/:fileName', (req, res) => res.download(path.join(__dirname, 'outputs', req.params.fileName)));
 app.get('/logs', authenticate, (req, res) => res.json(JSON.parse(fs.readFileSync(LOG_FILE, 'utf8'))));
 
