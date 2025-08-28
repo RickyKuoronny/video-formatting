@@ -1,3 +1,4 @@
 # Ignore transcoded outputs
 outputs/
+node_modules/
 
