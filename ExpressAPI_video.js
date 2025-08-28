@@ -7,39 +7,52 @@ const cors = require('cors');
 const jwt = require('jsonwebtoken');
 const os = require('os-utils');
 
-ffmpeg.setFfmpegPath('/usr/bin/ffmpeg'); // adjust if needed
+ffmpeg.setFfmpegPath('/usr/bin/ffmpeg');
 const app = express();
 const PORT = 3000;
 const SECRET = 'mysecretkey';
 
-app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(express.static('public'));
+
+// ✅ CORS setup
+const corsOptions = {
+  origin: '*', // Or restrict to your front-end domain
+  methods: ['GET', 'POST', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization']
+};
+app.use(cors(corsOptions));
+
+// Handle preflight for /upload specifically
+app.options('/upload', cors(corsOptions));
 
 const upload = multer({ dest: 'uploads/' });
 const LOG_FILE = path.join(__dirname, 'transcodeLogs.json');
 if (!fs.existsSync(LOG_FILE)) fs.writeFileSync(LOG_FILE, '[]', 'utf8');
 
-// Simple user database
+// --- Users ---
 const users = [
   { username: 'user1', password: 'pass1', role: 'standard' },
   { username: 'admin', password: 'adminpass', role: 'admin' }
 ];
 
-// LOGIN
+// --- LOGIN ---
 app.post('/login', (req, res) => {
+  console.log('login HIT ✅');
   const { username, password } = req.body;
   const user = users.find(u => u.username === username && u.password === password);
   if (!user) return res.status(401).json({ error: 'Invalid credentials' });
+
   const token = jwt.sign({ username: user.username, role: user.role }, SECRET, { expiresIn: '1h' });
   res.json({ token });
 });
 
-// Auth middleware
+// --- AUTH MIDDLEWARE ---
 function authenticate(req, res, next) {
   const authHeader = req.headers['authorization'];
   if (!authHeader) return res.status(401).json({ error: 'No token provided' });
+
   const token = authHeader.split(' ')[1];
   jwt.verify(token, SECRET, (err, decoded) => {
     if (err) return res.status(401).json({ error: 'Invalid token' });
@@ -48,8 +61,10 @@ function authenticate(req, res, next) {
   });
 }
 
-// UPLOAD + TRANSCODE
+// --- UPLOAD + TRANSCODE ---
 app.post('/upload', authenticate, upload.single('video'), (req, res) => {
+  console.log('UPLOAD ROUTE HIT ✅', req.file);
+
   if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
 
   const inputPath = req.file.path;
@@ -78,12 +93,7 @@ app.post('/upload', authenticate, upload.single('video'), (req, res) => {
     });
 });
 
-// DOWNLOAD
-app.get('/download/:fileName', (req, res) => {
-  const filePath = path.join(__dirname, 'outputs', req.params.fileName);
-  if (!fs.existsSync(filePath)) return res.status(404).send('File not found');
-  res.download(filePath);
-});
+// --- OTHER ENDPOINTS ---
+app.get('/download/:fileName', (req, res) => res.download(path.join(__dirname, 'outputs', req.params.fileName)));
 
-// Start server
 app.listen(PORT, '0.0.0.0', () => console.log(`Server running on http://localhost:${PORT}`));
