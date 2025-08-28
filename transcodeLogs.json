@@ -12,5 +12,13 @@
     "startedAt": "2025-08-28T03:47:34.057Z",
     "completedAt": "2025-08-28T03:48:10.042Z",
     "user": "user1"
+  },
+  {
+    "input": "uploads\\eba3221e72a2f582abe1f0644f6fe776",
+    "output": "C:\\Users\\rkuor\\DocumentsPC\\CAB432\\ass1\\outputs\\output_1756352995100.mp4",
+    "resolution": "1920x1080",
+    "startedAt": "2025-08-28T03:49:55.100Z",
+    "completedAt": "2025-08-28T03:53:17.068Z",
+    "user": "admin"
   }
 ]
