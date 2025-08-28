@@ -8,6 +8,7 @@ const cors = require('cors');
 const jwt = require('jsonwebtoken');
 const os = require('os-utils');
 
+ffmpeg.setFfmpegPath(ffmpegPath);
 const app = express();
 const PORT = 3000;
 const SECRET = 'mysecretkey'; // keep it secret in production

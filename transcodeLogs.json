@@ -4,5 +4,13 @@
     "output": "/home/ubuntu/video-formatting/outputs/output_1756266036364.mp4",
     "resolution": "640x360",
     "completedAt": "2025-08-27T03:43:55.941Z"
+  },
+  {
+    "input": "uploads\\d86a8a3004bd24f20c5d728855822ac3",
+    "output": "C:\\Users\\rkuor\\DocumentsPC\\CAB432\\ass1\\outputs\\output_1756352854055.mp4",
+    "resolution": "640x360",
+    "startedAt": "2025-08-28T03:47:34.057Z",
+    "completedAt": "2025-08-28T03:48:10.042Z",
+    "user": "user1"
   }
 ]
