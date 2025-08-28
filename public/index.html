@@ -391,85 +391,52 @@ loginForm.addEventListener('submit', async (e) => {
     }
 });
 
-
-
+// Upload handler
 uploadForm.addEventListener('submit', async (e) => {
     e.preventDefault();
+    console.log('UPLOAD FORM SUBMIT HIT ✅');
 
     if (!jwtToken) {
         status.textContent = '❌ Login first!';
         return;
     }
 
-    const formData = new FormData(uploadForm);
+    const fileInput = uploadForm.querySelector('input[type="file"]');
+    if (!fileInput || !fileInput.files.length) {
+        status.textContent = '❌ Select a file first!';
+        return;
+    }
+
+    const formData = new FormData();
+    formData.append(fileInput.name || 'file', fileInput.files[0]);
+
+    status.textContent = 'Uploading & Transcoding... ⏳';
+    downloadLink.style.display = 'none';
 
     try {
-        const res = await fetch('/upload', {
+        const res = await fetch(`${window.location.origin}/upload`, {
             method: 'POST',
-            headers: { 'Authorization': 'Bearer ' + jwtToken },
+            headers: {
+                'Authorization': 'Bearer ' + jwtToken
+            },
             body: formData
         });
 
-        console.log('Fetch response status:', res.status);
-
-        const data = await res.json();
-        console.log('Server response:', data);
-
-        if (res.ok) {
-            status.textContent = '✅ Upload hit the server!';
-        } else {
-            status.textContent = '❌ Server error: ' + (data.error || 'Unknown');
+        if (!res.ok) {
+            const err = await res.json();
+            status.textContent = '❌ Error: ' + (err.error || 'Unknown');
+            return;
         }
+
+        const result = await res.json();
+        status.textContent = '✅ Transcoding completed!';
+        downloadLink.href = `/download/${result.file}`;
+        downloadLink.style.display = 'block';
     } catch (err) {
-        console.error('Fetch failed:', err);
-        status.textContent = '❌ Fetch error';
+        console.error(err);
+        status.textContent = '❌ Upload failed!';
     }
 });
-// // Upload handler
-// uploadForm.addEventListener('submit', async (e) => {
-//     e.preventDefault();
-//     console.log('UPLOAD FORM SUBMIT HIT ✅');
-//     if (!jwtToken) {
-//         status.textContent = '❌ Login first!';
-//         return;
-//     }
-
-//     const fileInput = uploadForm.querySelector('input[name="video"]');
-//     if (!fileInput.files.length) {
-//         status.textContent = '❌ Select a file first!';
-//         return;
-//     }
-
-//     const formData = new FormData();
-//     formData.append('video', fileInput.files[0]);
-
-//     status.textContent = 'Uploading & Transcoding... ⏳';
-//     downloadLink.style.display = 'none';
-
-//     try {
-//         const res = await fetch(`${window.location.origin}/upload`, {
-//             method: 'POST',
-//             headers: {
-//                 'Authorization': 'Bearer ' + jwtToken
-//             },
-//             body: formData
-//         });
-
-//         if (!res.ok) {
-//             const err = await res.json();
-//             status.textContent = '❌ Error: ' + (err.error || 'Unknown');
-//             return;
-//         }
-
-//         const result = await res.json();
-//         status.textContent = '✅ Transcoding completed!';
-//         downloadLink.href = `/download/${result.file}`;
-//         downloadLink.style.display = 'block';
-//     } catch (err) {
-//         console.error(err);
-//         status.textContent = '❌ Upload failed!';
-//     }
-// });
 
 
 // Initialize responsiveness

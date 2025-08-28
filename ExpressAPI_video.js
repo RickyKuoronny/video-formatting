@@ -52,9 +52,9 @@ function authenticate(req, res, next) {
   });
 }
 
+
 // UPLOAD + TRANSCODE (protected)
-// UPLOAD + TRANSCODE (protected)
-app.post('/upload', authenticate, upload.single('video'), (req, res) => {
+app.post('/upload', authenticate, upload.any(), (req, res) => {
   console.log('UPLOAD HIT ✅');
   console.log('REQ.FILE:', req.file);
   console.log('REQ.BODY:', req.body);
