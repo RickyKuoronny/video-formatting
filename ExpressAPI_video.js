@@ -53,44 +53,56 @@ function authenticate(req, res, next) {
 
 // UPLOAD + TRANSCODE (protected)
 app.post('/upload', authenticate, upload.single('video'), (req, res) => {
-  const { resolution } = req.body;
-  if (!req.file || !resolution) return res.status(400).json({ error: 'Missing file or resolution' });
+    const { resolution } = req.body;
+    if (!req.file || !resolution) return res.status(400).json({ error: 'Missing file or resolution' });
 
-  const inputPath = req.file.path;
-  const outputFile = `output_${Date.now()}.mp4`;
-  const outputPath = path.join(__dirname, 'outputs', outputFile);
-  if (!fs.existsSync(path.join(__dirname, 'outputs'))) fs.mkdirSync(path.join(__dirname, 'outputs'));
+    const inputPath = req.file.path;
+    const outputFile = `output_${Date.now()}.mp4`;
+    const outputDir = path.join(__dirname, 'outputs');
+    if (!fs.existsSync(outputDir)) fs.mkdirSync(outputDir);
+    const outputPath = path.join(outputDir, outputFile);
 
-  const startTime = new Date().toISOString();
+    console.log(`Starting transcoding for ${inputPath} to resolution ${resolution}...`);
 
-  ffmpeg(inputPath)
-    .setFfmpegPath(ffmpegPath)
-    .videoCodec('libx264')
-    .size(resolution)
-    .on('progress', (progress) => {
-      console.log(`Processing: ${progress.percent.toFixed(2)}% done`);
-    })
-    .on('end', () => {
-      const endTime = new Date().toISOString();
+    const startTime = new Date().toISOString();
 
-      const logs = JSON.parse(fs.readFileSync(LOG_FILE, 'utf8'));
-      logs.push({
-        input: inputPath,
-        output: outputPath,
-        resolution,
-        startedAt: startTime,
-        completedAt: endTime,
-        user: req.user.username
-      });
-      fs.writeFileSync(LOG_FILE, JSON.stringify(logs, null, 2));
+    ffmpeg(inputPath)
+        .setFfmpegPath(ffmpegPath)
+        .videoCodec('libx264')
+        .size(resolution)
+        .on('start', commandLine => {
+            console.log('FFmpeg command:', commandLine);
+        })
+        .on('progress', progress => {
+            // Sometimes progress.percent is undefined, handle safely
+            const percent = progress.percent ? progress.percent.toFixed(2) : 0;
+            console.log(`Processing: ${percent}% done`);
+        })
+        .on('error', err => {
+            console.error('Transcoding error:', err.message);
+            res.status(500).json({ error: 'Transcoding failed: ' + err.message });
+        })
+        .on('end', () => {
+            const endTime = new Date().toISOString();
+            console.log('Transcoding finished successfully.');
 
-      res.json({ message: 'Transcoding completed!', outputFile: `/download/${outputFile}` });
-    })
-    .on('error', (err) => {
-      res.status(500).json({ error: 'Transcoding failed' });
-    })
-    .save(outputPath);
+            // Save log
+            const logs = JSON.parse(fs.readFileSync(LOG_FILE, 'utf8'));
+            logs.push({
+                input: inputPath,
+                output: outputPath,
+                resolution,
+                startedAt: startTime,
+                completedAt: endTime,
+                user: req.user.username
+            });
+            fs.writeFileSync(LOG_FILE, JSON.stringify(logs, null, 2));
+
+            res.json({ message: 'Transcoding completed!', outputFile: `/download/${outputFile}` });
+        })
+        .save(outputPath);
 });
+
 
 
 // Admin-only CPU endpoint
