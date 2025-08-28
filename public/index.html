@@ -416,16 +416,12 @@ uploadForm.addEventListener('submit', async (e) => {
             downloadLink.style.display = 'block';
         } else {
             status.textContent = '❌ Error: ' + (result.error || 'Unknown');
-            setTimeout(() => {
-                status.textContent = '';
-            }, 2000);
+
         }
     } catch (err) {
         console.error(err);
         status.textContent = '❌ Something went wrong!';
-        setTimeout(() => {
-                status.textContent = '';
-        }, 2000);
+
     }
 });
 

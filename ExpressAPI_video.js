@@ -67,6 +67,9 @@ app.post('/upload', authenticate, upload.single('video'), (req, res) => {
     .setFfmpegPath(ffmpegPath)
     .videoCodec('libx264')
     .size(resolution)
+    .on('progress', (progress) => {
+      console.log(`Processing: ${progress.percent.toFixed(2)}% done`);
+    })
     .on('end', () => {
       const endTime = new Date().toISOString();
 
