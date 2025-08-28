@@ -7,7 +7,7 @@ const cors = require('cors');
 const jwt = require('jsonwebtoken');
 const os = require('os-utils');
 
-ffmpeg.setFfmpegPath(ffmpeg);
+ffmpeg.setFfmpegPath('/usr/bin/ffmpeg');
 const app = express();
 const PORT = 3000;
 const SECRET = 'mysecretkey'; // keep it secret in production
@@ -20,7 +20,7 @@ app.use(express.static('public')); // serve index.html
 const upload = multer({ dest: 'uploads/' });
 const LOG_FILE = path.join(__dirname, 'transcodeLogs.json');
 
-if (!fs.existsSync(LOG_FILE)) fs.writeFileSync(LOG_FILE, JSON.stringify([]));
+if (!fs.existsSync(LOG_FILE)) fs.writeFileSync(LOG_FILE, '[]', 'utf8');
 
 // Simple user database
 const users = [
@@ -62,23 +62,18 @@ app.post('/upload', authenticate, upload.single('video'), (req, res) => {
   const outputFileName = `${Date.now()}-${req.file.originalname}`;
   const outputPath = path.join(outputDir, outputFileName);
 
+
   ffmpeg(inputPath)
-    .outputOptions('-c:v libx264', '-preset fast', '-c:a aac')
+    .videoCodec('libx264')
+    .audioCodec('aac')
+    .outputOptions('-preset', 'fast')
     .save(outputPath)
+    .on('start', cmd => console.log('FFmpeg command:', cmd))
     .on('end', () => {
-      // Remove the original uploaded file
       fs.unlinkSync(inputPath);
-
-      // Log the transcode
-      const logEntry = {
-        user: req.user.username,
-        file: outputFileName,
-        timestamp: new Date().toISOString()
-      };
       const logs = JSON.parse(fs.readFileSync(LOG_FILE, 'utf8'));
-      logs.push(logEntry);
+      logs.push({ user: req.user.username, file: outputFileName, timestamp: new Date().toISOString() });
       fs.writeFileSync(LOG_FILE, JSON.stringify(logs, null, 2));
-
       res.json({ message: 'File transcoded successfully', file: outputFileName });
     })
     .on('error', (err) => {
