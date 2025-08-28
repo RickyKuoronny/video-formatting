@@ -394,6 +394,7 @@ loginForm.addEventListener('submit', async (e) => {
 // Upload handler
 uploadForm.addEventListener('submit', async (e) => {
     e.preventDefault();
+    console.log('UPLOAD FORM SUBMIT HIT ✅');
     if (!jwtToken) {
         status.textContent = '❌ Login first!';
         return;
