@@ -399,31 +399,43 @@ uploadForm.addEventListener('submit', async (e) => {
         return;
     }
 
+    const fileInput = uploadForm.querySelector('input[name="video"]');
+    if (!fileInput.files.length) {
+        status.textContent = '❌ Select a file first!';
+        return;
+    }
+
+    const formData = new FormData();
+    formData.append('video', fileInput.files[0]);
+
     status.textContent = 'Uploading & Transcoding... ⏳';
     downloadLink.style.display = 'none';
-    const formData = new FormData(uploadForm);
 
     try {
         const res = await fetch(`${window.location.origin}/upload`, {
             method: 'POST',
-            headers: { 'Authorization': 'Bearer ' + jwtToken },
+            headers: {
+                'Authorization': 'Bearer ' + jwtToken
+            },
             body: formData
         });
-        const result = await res.json();
-        if (result.outputFile) {
-            status.textContent = '✅ Transcoding completed!';
-            downloadLink.href = result.outputFile;
-            downloadLink.style.display = 'block';
-        } else {
-            status.textContent = '❌ Error: ' + (result.error || 'Unknown');
 
+        if (!res.ok) {
+            const err = await res.json();
+            status.textContent = '❌ Error: ' + (err.error || 'Unknown');
+            return;
         }
+
+        const result = await res.json();
+        status.textContent = '✅ Transcoding completed!';
+        downloadLink.href = `/download/${result.file}`;
+        downloadLink.style.display = 'block';
     } catch (err) {
         console.error(err);
-        status.textContent = '❌ Something went wrong!';
-
+        status.textContent = '❌ Upload failed!';
     }
 });
+
 
 // Initialize responsiveness
 window.addEventListener("resize", handleResize);
