@@ -30,6 +30,7 @@ const users = [
 
 // LOGIN endpoint
 app.post('/login', (req, res) => {
+  console.log('login HIT ✅');
   const { username, password } = req.body;
   const user = users.find(u => u.username === username && u.password === password);
   if (!user) return res.status(401).json({ error: 'Invalid credentials' });
@@ -53,6 +54,14 @@ function authenticate(req, res, next) {
 
 // UPLOAD + TRANSCODE (protected)
 app.post('/upload', authenticate, upload.single('video'), (req, res) => {
+  console.log('UPLOAD HIT ✅');
+  console.log('REQ.FILE:', req.file);
+  console.log('REQ.BODY:', req.body);
+
+  if (!req.file) {
+    console.error('No file uploaded ❌');
+    return res.status(400).json({ error: 'No file uploaded' });
+  }
   if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
 
   const inputPath = req.file.path;
