@@ -16,6 +16,18 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(express.static('public'));
 
+// --- Paths for folders ---
+const UPLOADS_DIR = path.join(__dirname, 'uploads');
+const OUTPUTS_DIR = path.join(__dirname, 'outputs');
+
+// Create folders if they don't exist
+[UPLOADS_DIR, OUTPUTS_DIR].forEach(dir => {
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true });
+    console.log(`✅ Created folder: ${dir}`);
+  }
+});
+
 // ✅ CORS setup
 const corsOptions = {
   origin: '*', // Or restrict to your front-end domain
