@@ -53,43 +53,59 @@ function authenticate(req, res, next) {
 }
 
 // UPLOAD + TRANSCODE (protected)
+// UPLOAD + TRANSCODE (protected)
 app.post('/upload', authenticate, upload.single('video'), (req, res) => {
   console.log('UPLOAD HIT ✅');
   console.log('REQ.FILE:', req.file);
   console.log('REQ.BODY:', req.body);
 
-  if (!req.file) {
-    console.error('No file uploaded ❌');
-    return res.status(400).json({ error: 'No file uploaded' });
+  if (!req.file || req.file.size === 0) {
+    console.error('No file uploaded or empty file ❌');
+    return res.status(400).json({ error: 'No file uploaded or empty file' });
   }
-  if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
 
-  const inputPath = req.file.path;
-  const outputDir = path.join(__dirname, 'outputs');
-  if (!fs.existsSync(outputDir)) fs.mkdirSync(outputDir);
+  try {
+    // Ensure outputs directory exists
+    const outputDir = path.join(__dirname, 'outputs');
+    if (!fs.existsSync(outputDir)) fs.mkdirSync(outputDir);
 
-  const outputFileName = `${Date.now()}-${req.file.originalname}`;
-  const outputPath = path.join(outputDir, outputFileName);
+    // Preserve file extension for FFmpeg
+    const ext = path.extname(req.file.originalname);
+    const inputPath = req.file.path + ext;
+    fs.renameSync(req.file.path, inputPath);
 
+    const outputFileName = `${Date.now()}-${req.file.originalname}`;
+    const outputPath = path.join(outputDir, outputFileName);
 
-  ffmpeg(inputPath)
-    .videoCodec('libx264')
-    .audioCodec('aac')
-    .outputOptions('-preset', 'fast')
-    .save(outputPath)
-    .on('start', cmd => console.log('FFmpeg command:', cmd))
-    .on('end', () => {
-      fs.unlinkSync(inputPath);
-      const logs = JSON.parse(fs.readFileSync(LOG_FILE, 'utf8'));
-      logs.push({ user: req.user.username, file: outputFileName, timestamp: new Date().toISOString() });
-      fs.writeFileSync(LOG_FILE, JSON.stringify(logs, null, 2));
-      res.json({ message: 'File transcoded successfully', file: outputFileName });
-    })
-    .on('error', (err) => {
-      fs.unlinkSync(inputPath);
-      res.status(500).json({ error: 'Transcoding failed', details: err.message });
-    });
+    ffmpeg(inputPath)
+      .videoCodec('libx264')
+      .audioCodec('aac')
+      .outputOptions('-preset', 'fast')
+      .on('start', cmd => console.log('FFmpeg command:', cmd))
+      .on('end', () => {
+        // Remove the input file
+        fs.unlinkSync(inputPath);
+
+        // Log the transcode
+        const logs = JSON.parse(fs.readFileSync(LOG_FILE, 'utf8'));
+        logs.push({ user: req.user.username, file: outputFileName, timestamp: new Date().toISOString() });
+        fs.writeFileSync(LOG_FILE, JSON.stringify(logs, null, 2));
+
+        res.json({ message: 'File transcoded successfully', outputFile: outputFileName });
+      })
+      .on('error', (err) => {
+        console.error('FFmpeg error:', err);
+        if (fs.existsSync(inputPath)) fs.unlinkSync(inputPath);
+        res.status(500).json({ error: 'Transcoding failed', details: err.message });
+      })
+      .save(outputPath);
+
+  } catch (err) {
+    console.error('Upload handler error:', err);
+    res.status(500).json({ error: 'Server error', details: err.message });
+  }
 });
+
 
 
 // Admin-only CPU endpoint
