@@ -27,7 +27,19 @@ app.use(cors(corsOptions));
 // Handle preflight for /upload specifically
 app.options('/upload', cors(corsOptions));
 
-const upload = multer({ dest: 'uploads/' });
+const upload = multer({
+  dest: UPLOADS_DIR,
+  limits: {
+    fileSize: 500 * 1024 * 1024 // 500MB max upload
+  },
+  fileFilter: (req, file, cb) => {
+    // Only allow videos
+    if (!file.mimetype.startsWith('video/')) {
+      return cb(new Error('Only video files are allowed'), false);
+    }
+    cb(null, true);
+  }
+});
 const LOG_FILE = path.join(__dirname, 'transcodeLogs.json');
 if (!fs.existsSync(LOG_FILE)) fs.writeFileSync(LOG_FILE, '[]', 'utf8');
 
@@ -68,11 +80,8 @@ app.post('/upload', authenticate, upload.single('video'), (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
 
   const inputPath = req.file.path;
-  const outputDir = path.join(__dirname, 'outputs');
-  if (!fs.existsSync(outputDir)) fs.mkdirSync(outputDir);
-
   const outputFileName = `${Date.now()}-${req.file.originalname}`;
-  const outputPath = path.join(outputDir, outputFileName);
+  const outputPath = path.join(OUTPUTS_DIR, outputFileName);
 
   ffmpeg(inputPath)
     .videoCodec('libx264')
@@ -81,17 +90,27 @@ app.post('/upload', authenticate, upload.single('video'), (req, res) => {
     .save(outputPath)
     .on('start', cmd => console.log('FFmpeg command:', cmd))
     .on('end', () => {
-      fs.unlinkSync(inputPath);
+      try { fs.unlinkSync(inputPath); } catch(e){ console.error(e); }
+
       const logs = JSON.parse(fs.readFileSync(LOG_FILE, 'utf8'));
-      logs.push({ user: req.user.username, file: outputFileName, timestamp: new Date().toISOString() });
+      logs.push({ 
+        user: req.user.username, 
+        file: outputFileName, 
+        input: req.file.originalname,
+        resolution: req.body.resolution || 'original',
+        startedAt: new Date().toISOString(),
+        completedAt: new Date().toISOString()
+      });
       fs.writeFileSync(LOG_FILE, JSON.stringify(logs, null, 2));
+
       res.json({ file: outputFileName });
     })
     .on('error', (err) => {
-      fs.unlinkSync(inputPath);
+      try { fs.unlinkSync(inputPath); } catch(e){ console.error(e); }
       res.status(500).json({ error: 'Transcoding failed', details: err.message });
     });
 });
+
 
 // --- OTHER ENDPOINTS ---
 app.get('/download/:fileName', (req, res) => res.download(path.join(__dirname, 'outputs', req.params.fileName)));
