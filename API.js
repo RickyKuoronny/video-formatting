@@ -66,52 +66,44 @@ function authenticate(req, res, next) {
     });
 }
 
-// UPLOAD + TRANSCODE (protected)
 app.post('/upload', authenticate, upload.single('video'), (req, res) => {
     const { resolution } = req.body;
     if (!req.file || !resolution) return res.status(400).json({ error: 'Missing file or resolution' });
 
-    const inputPath = path.join(UPLOAD_DIR, req.file.filename);
+    const inputPath = path.resolve(UPLOAD_DIR, req.file.filename);
     const outputFile = `output_${Date.now()}.mp4`;
-    const outputPath = path.join(OUTPUT_DIR, outputFile);
+    const outputPath = path.resolve(OUTPUT_DIR, outputFile);
 
     console.log(`Starting transcoding for ${inputPath} to resolution ${resolution}...`);
 
     const startTime = new Date().toISOString();
 
     ffmpeg(inputPath)
+        .setFfmpegPath('/usr/bin/ffmpeg')
         .videoCodec('libx264')
         .size(resolution)
-        .on('start', commandLine => {
-            console.log('FFmpeg command:', commandLine);
-        })
+        .on('start', commandLine => console.log('FFmpeg command:', commandLine))
         .on('progress', progress => {
             const percent = progress.percent ? progress.percent.toFixed(2) : 0;
-            process.stdout.write(`Processing: ${percent}%\r`); // live progress
+            process.stdout.write(`Processing: ${percent}%\r`);
         })
-        .on('stderr', line => {
-            console.log(line); // show FFmpeg logs
-        })
+        .on('stderr', line => console.log(line))
         .on('error', err => {
             console.error('Transcoding error:', err.message);
             res.status(500).json({ error: 'Transcoding failed: ' + err.message });
         })
         .on('end', () => {
-            const endTime = new Date().toISOString();
             console.log('Transcoding finished successfully.');
-
-            // Save log
             const logs = JSON.parse(fs.readFileSync(LOG_FILE, 'utf8'));
             logs.push({
                 input: inputPath,
                 output: outputPath,
                 resolution,
                 startedAt: startTime,
-                completedAt: endTime,
+                completedAt: new Date().toISOString(),
                 user: req.user.username
             });
             fs.writeFileSync(LOG_FILE, JSON.stringify(logs, null, 2));
-
             res.json({ message: 'Transcoding completed!', outputFile: `/download/${outputFile}` });
         })
         .save(outputPath);
