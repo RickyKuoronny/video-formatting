@@ -54,56 +54,39 @@ function authenticate(req, res, next) {
 
 // UPLOAD + TRANSCODE (protected)
 app.post('/upload', authenticate, upload.single('video'), (req, res) => {
-    const { resolution } = req.body;
-    if (!req.file || !resolution) return res.status(400).json({ error: 'Missing file or resolution' });
+  if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
 
-    const inputPath = req.file.path;
-    const outputFile = `output_${Date.now()}.mp4`;
-    const outputDir = path.join(__dirname, 'outputs');
-    if (!fs.existsSync(outputDir)) fs.mkdirSync(outputDir);
-    const outputPath = path.join(outputDir, outputFile);
+  const inputPath = req.file.path;
+  const outputDir = path.join(__dirname, 'outputs');
+  if (!fs.existsSync(outputDir)) fs.mkdirSync(outputDir);
 
-    console.log(`Starting transcoding for ${inputPath} to resolution ${resolution}...`);
+  const outputFileName = `${Date.now()}-${req.file.originalname}`;
+  const outputPath = path.join(outputDir, outputFileName);
 
-    const startTime = new Date().toISOString();
+  ffmpeg(inputPath)
+    .outputOptions('-c:v libx264', '-preset fast', '-c:a aac')
+    .save(outputPath)
+    .on('end', () => {
+      // Remove the original uploaded file
+      fs.unlinkSync(inputPath);
 
-    ffmpeg(inputPath)
-        .setFfmpegPath(ffmpegPath)
-        .videoCodec('libx264')
-        .size(resolution)
-        .on('start', commandLine => {
-            console.log('FFmpeg command:', commandLine);
-        })
-        .on('progress', progress => {
-            // Sometimes progress.percent is undefined, handle safely
-            const percent = progress.percent ? progress.percent.toFixed(2) : 0;
-            console.log(`Processing: ${percent}% done`);
-        })
-        .on('error', err => {
-            console.error('Transcoding error:', err.message);
-            res.status(500).json({ error: 'Transcoding failed: ' + err.message });
-        })
-        .on('end', () => {
-            const endTime = new Date().toISOString();
-            console.log('Transcoding finished successfully.');
+      // Log the transcode
+      const logEntry = {
+        user: req.user.username,
+        file: outputFileName,
+        timestamp: new Date().toISOString()
+      };
+      const logs = JSON.parse(fs.readFileSync(LOG_FILE, 'utf8'));
+      logs.push(logEntry);
+      fs.writeFileSync(LOG_FILE, JSON.stringify(logs, null, 2));
 
-            // Save log
-            const logs = JSON.parse(fs.readFileSync(LOG_FILE, 'utf8'));
-            logs.push({
-                input: inputPath,
-                output: outputPath,
-                resolution,
-                startedAt: startTime,
-                completedAt: endTime,
-                user: req.user.username
-            });
-            fs.writeFileSync(LOG_FILE, JSON.stringify(logs, null, 2));
-
-            res.json({ message: 'Transcoding completed!', outputFile: `/download/${outputFile}` });
-        })
-        .save(outputPath);
+      res.json({ message: 'File transcoded successfully', file: outputFileName });
+    })
+    .on('error', (err) => {
+      fs.unlinkSync(inputPath);
+      res.status(500).json({ error: 'Transcoding failed', details: err.message });
+    });
 });
-
 
 
 // Admin-only CPU endpoint
@@ -135,6 +118,5 @@ app.get('/logs', authenticate, (req, res) => {
 
 
 app.get('/download/:fileName', (req, res) => res.download(path.join(__dirname, 'outputs', req.params.fileName)));
-app.get('/logs', authenticate, (req, res) => res.json(JSON.parse(fs.readFileSync(LOG_FILE, 'utf8'))));
 
 app.listen(PORT, '0.0.0.0', () => console.log(`Server running on http://localhost:${PORT}`));
