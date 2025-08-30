@@ -1,18 +1,18 @@
-import express from "express";
-import multer from "multer";
-import jwt from "jsonwebtoken";
-import bcrypt from "bcryptjs";
-import fs from "fs";
-import path from "path";
-import cors from "cors";
-import os from "os-utils";
-import { spawn } from "child_process";
+const express = require("express");
+const multer = require("multer");
+const jwt = require("jsonwebtoken");
+const bcrypt = require("bcryptjs");
+const fs = require("fs");
+const path = require("path");
+const cors = require("cors");
+const os = require("os-utils");
+const { spawn } = require("child_process");
 
 const app = express();
 const PORT = 3000;
 const SECRET_KEY = "supersecretkey"; // Change in production
-const UPLOADS_DIR = path.join(process.cwd(), "uploads");
-const OUTPUT_DIR = path.join(process.cwd(), "output");
+const UPLOADS_DIR = path.join(__dirname, "uploads");
+const OUTPUT_DIR = path.join(__dirname, "output");
 
 if (!fs.existsSync(UPLOADS_DIR)) fs.mkdirSync(UPLOADS_DIR);
 if (!fs.existsSync(OUTPUT_DIR)) fs.mkdirSync(OUTPUT_DIR);
@@ -32,13 +32,13 @@ const storage = multer.diskStorage({
 });
 const upload = multer({ storage });
 
-// Dummy users (replace with DB later)
+// Dummy users
 const users = [
     { username: "admin", password: bcrypt.hashSync("admin123", 10), role: "admin" },
     { username: "user", password: bcrypt.hashSync("user123", 10), role: "user" }
 ];
 
-// Transcoding logs (in-memory)
+// Transcoding logs
 const logs = [];
 
 // Middleware: Verify JWT
@@ -54,7 +54,7 @@ const verifyToken = (req, res, next) => {
     });
 };
 
-// Middleware: Check Admin
+// Middleware: Admin only
 const verifyAdmin = (req, res, next) => {
     if (req.user.role !== "admin") {
         return res.status(403).json({ error: "Access denied" });
@@ -81,7 +81,7 @@ app.post("/login", (req, res) => {
 // Upload + Transcode
 app.post("/upload", verifyToken, upload.single("video"), async (req, res) => {
     try {
-        const { resolution } = req.body;
+        const resolution = req.body.resolution || "1280x720";
         const inputPath = req.file.path;
         const outputFile = `${Date.now()}-${resolution}.mp4`;
         const outputPath = path.join(OUTPUT_DIR, outputFile);
@@ -114,7 +114,7 @@ app.post("/upload", verifyToken, upload.single("video"), async (req, res) => {
     }
 });
 
-// Download transcoded video
+// Download
 app.get("/download/:file", (req, res) => {
     const filePath = path.join(OUTPUT_DIR, req.params.file);
     if (!fs.existsSync(filePath)) {
@@ -135,7 +135,7 @@ app.get("/logs", verifyToken, verifyAdmin, (req, res) => {
     res.json(logs);
 });
 
-// Start Server
+// Start server
 app.listen(PORT, () => {
     console.log(`🚀 Server running at http://localhost:${PORT}`);
 });
