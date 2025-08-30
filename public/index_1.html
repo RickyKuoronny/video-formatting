@@ -1,0 +1,491 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Video Transcoder</title>
+
+<link rel="stylesheet" href="style.css">
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+
+<div class="container">
+    <h2>🎥 Video Formatting</h2>
+
+    <form id="loginForm">
+        <input type="text" name="username" placeholder="Username" required />
+        <input type="password" name="password" placeholder="Password" required />
+        <button type="submit">Login</button>
+    </form>
+
+    <form id="uploadForm" style="display:none;">
+        <input type="file" name="video" accept="video/*" required />
+        <select name="resolution" required>
+            <option value="">Select Resolution</option>
+            <option value="640x360">360p</option>
+            <option value="1280x720">720p</option>
+            <option value="1920x1080">1080p</option>
+        </select>
+        <button type="submit">Format</button>
+    </form>
+
+    <p id="status"></p>
+    <a id="download-link" href="#" download>⬇️ Download Transcoded Video</a>
+
+<div id="adminIcon" title="Show Admin Panel" style="display:none;">👤</div>
+
+
+<div id="adminPanel">
+    <h3>⚡ Admin Panel</h3>
+    <div class="chart-wrapper">
+        <canvas id="cpuChart"></canvas>
+    </div>
+</div>
+
+
+<div id="logsIcon" title="View Transcoding Logs" style="display:none;">📄</div>
+
+<div id="logsPanel">
+    <h3>📜 Transcoding Logs</h3>
+    <div id="logsContent" style="font-size:14px; text-align:left;"></div>
+</div>
+
+<!-- Admin Modal (Mobile Only) -->
+<div id="adminModal" class="modal">
+    <div class="modal-header">
+        <span>⚡ Admin Panel</span>
+        <button onclick="closeModal('adminModal')">❌</button>
+    </div>
+    <div class="modal-body">
+        <canvas id="cpuChartMobile" width="350" height="200"></canvas>
+    </div>
+</div>
+
+<!-- Logs Modal (Mobile Only) -->
+<div id="logsModal" class="modal">
+    <div class="modal-header">
+        <span>📜 Transcoding Logs</span>
+        <button onclick="closeModal('logsModal')">❌</button>
+    </div>
+    <div class="modal-body" id="logsContentMobile">
+        <p>Loading logs...</p>
+    </div>
+</div>
+
+
+<script>let jwtToken = '';
+const loginForm = document.getElementById('loginForm');
+const uploadForm = document.getElementById('uploadForm');
+const status = document.getElementById('status');
+const downloadLink = document.getElementById('download-link');
+const adminIcon = document.getElementById('adminIcon');
+const adminPanel = document.getElementById('adminPanel');
+const logsIcon = document.getElementById('logsIcon');
+const logsPanel = document.getElementById('logsPanel');
+const logsContent = document.getElementById('logsContent');
+const adminModal = document.getElementById('adminModal');
+const logsModal = document.getElementById('logsModal');
+const smallestwindow = 768;
+
+const logsStatus = document.createElement('p');
+logsStatus.style.color = 'red';
+logsStatus.style.marginTop = '10px';
+logsStatus.style.fontWeight = 'bold';
+logsPanel.parentNode.insertBefore(logsStatus, logsPanel.nextSibling);
+
+
+let cpuChart, intervalId;
+let cpuData = {
+    labels: [],
+    datasets: [{
+        label: 'CPU Usage (%)',
+        data: [],
+        borderColor: 'rgba(75,192,192,1)',
+        fill: false,
+        tension: 0.3
+    }]
+};
+
+
+// Make modal draggable
+function makeDraggable(modal) {
+    const header = modal.querySelector('.modal-header');
+    let isDragging = false, offsetX = 0, offsetY = 0;
+
+    header.onmousedown = (e) => {
+        isDragging = true;
+        offsetX = e.clientX - modal.offsetLeft;
+        offsetY = e.clientY - modal.offsetTop;
+        document.onmousemove = drag;
+        document.onmouseup = stopDrag;
+    };
+
+    function drag(e) {
+        if (!isDragging) return;
+        modal.style.left = e.clientX - offsetX + "px";
+        modal.style.top = e.clientY - offsetY + "px";
+    }
+
+    function stopDrag() {
+        isDragging = false;
+        document.onmousemove = null;
+        document.onmouseup = null;
+    }
+}
+
+makeDraggable(adminModal);
+makeDraggable(logsModal);
+
+function closeModal(id) {
+    document.getElementById(id).style.display = 'none';
+}
+
+
+// Helper function to toggle panels in desktop mode
+function togglePanel(panel) {
+    const isVisible = panel.style.display === 'block';
+
+    if (window.innerWidth < smallestwindow) {
+        // 📱 Mobile: keep current behavior (only one open at a time, bottom popup)
+        panel.classList.add('bottom-panel');
+        panel.style.display = isVisible ? 'none' : 'block';
+
+        // Hide the other panel on mobile
+        if (panel === logsPanel) adminPanel.style.display = 'none';
+        if (panel === adminPanel) logsPanel.style.display = 'none';
+    } else {
+        // 🖥 Desktop: independent toggling, don't force-close the other panel
+        panel.style.display = isVisible ? 'none' : 'block';
+    }
+}
+
+
+// Handling resizing window
+function handleResize() {
+    // If window width is less than mobile threshold
+    if (window.innerWidth < smallestwindow) {
+        // Hide desktop panels
+        logsPanel.style.display = 'none';
+        adminPanel.style.display = 'none';
+    } else {
+        // Hide mobile modals
+        logsModal.style.display = 'none';
+        adminModal.style.display = 'none';
+    }
+}
+
+// Call it once on load to ensure proper state
+handleResize();
+
+// Already have these listeners, they will now call handleResize
+window.addEventListener("resize", handleResize);
+window.addEventListener("load", handleResize);
+
+
+// Toggle Logs
+logsIcon.addEventListener("click", async () => {
+    const payload = jwtToken ? JSON.parse(atob(jwtToken.split('.')[1])) : null;
+    if (!payload || payload.role !== 'admin') {
+        // Non-admin users get an error
+        if (window.innerWidth < smallestwindow) {
+            logsStatus.textContent = '⚠️ Access denied: Admins only';
+            // const logsContentMobile = document.getElementById('logsContentMobile');
+            // adminModal.style.display = 'none';
+            // logsContentMobile.innerHTML = '<p style="color:red; font-weight:bold;">⚠️ Access denied: Admins only</p>';
+
+            // Hide the message after 2 seconds
+            setTimeout(() => {
+                logsStatus.style.display = 'none';
+            }, 2000);
+
+            return;
+        } else {
+            logsStatus.textContent = '⚠️ Access denied: Admins only';
+
+            // Hide the message after 2 seconds
+            setTimeout(() => {
+                logsStatus.textContent = '';
+            }, 2000);
+
+            // Don't open the logs panel for non-admins
+            return;
+        }
+    }
+
+    if (window.innerWidth < smallestwindow) {
+        logsModal.style.display = 'block';
+        adminModal.style.display = 'none';
+
+        const logsContentMobile = document.getElementById('logsContentMobile');
+        logsContentMobile.innerHTML = '<p>Loading logs...</p>';
+
+        try {
+            const res = await fetch('/logs', {
+                headers: { 'Authorization': 'Bearer ' + jwtToken }
+            });
+            if (!res.ok) throw new Error('Failed to fetch logs');
+
+            const logs = await res.json();
+            logsContentMobile.innerHTML = logs.length
+                ? logs.map(log => `
+                    <div class="log-card">
+                        <strong>User:</strong> ${log.user} <br/>
+                        <strong>Input:</strong> ${log.input} <br/>
+                        <strong>Output:</strong> ${log.output} <br/>
+                        <strong>Resolution:</strong> ${log.resolution} <br/>
+                        <strong>Started:</strong> ${log.startedAt} <br/>
+                        <strong>Completed:</strong> ${log.completedAt}
+                    </div>
+                `).join('')
+                : '<p>No transcoding logs available.</p>';
+        } catch (err) {
+            logsContentMobile.innerHTML = '<p style="color:red;">⚠️ Failed to fetch logs</p>';
+        }
+    } else {
+        // ✅ Show panel & fetch logs for desktop
+        togglePanel(logsPanel);
+        logsContent.innerHTML = '<p>Loading logs...</p>';
+
+        try {
+            const res = await fetch('/logs', {
+                headers: { 'Authorization': 'Bearer ' + jwtToken }
+            });
+            if (!res.ok) throw new Error('Failed to fetch logs');
+
+            const logs = await res.json();
+            logsContent.innerHTML = logs.length
+                ? logs.map(log => `
+                    <div class="log-card">
+                        <strong>User:</strong> ${log.user} <br/>
+                        <strong>Input:</strong> ${log.input} <br/>
+                        <strong>Output:</strong> ${log.output} <br/>
+                        <strong>Resolution:</strong> ${log.resolution} <br/>
+                        <strong>Started:</strong> ${log.startedAt} <br/>
+                        <strong>Completed:</strong> ${log.completedAt}
+                    </div>
+                `).join('')
+                : '<p>No transcoding logs available.</p>';
+        } catch (err) {
+            logsContent.innerHTML = '<p style="color:red;">⚠️ Failed to fetch logs</p>';
+        }
+    }
+});
+
+
+
+// Toggle Admin Panel
+adminIcon.addEventListener("click", () => {
+    const isMobile = window.innerWidth < smallestwindow;
+    const ctx = isMobile 
+        ? document.getElementById('cpuChartMobile').getContext('2d')
+        : document.getElementById('cpuChart').getContext('2d');
+
+    if (!ctx) return;
+
+    // Toggle panel/modal
+    if (isMobile) {
+        adminModal.style.display = 'block';
+        logsModal.style.display = 'none';
+    } else {
+        togglePanel(adminPanel);
+    }
+
+    // Auto-resize panel based on chart container
+    const wrapper = isMobile 
+        ? document.querySelector('#adminModal .modal-body') 
+        : document.querySelector('#adminPanel .chart-wrapper');
+
+    const chartHeight = wrapper.scrollHeight || 300; // fallback
+    wrapper.style.height = chartHeight + 'px';
+    if (!isMobile) adminPanel.style.height = wrapper.scrollHeight + 100 + 'px'; // include padding & heading
+
+    // Destroy old chart if exists
+    if (cpuChart) cpuChart.destroy();
+
+    // Initialize Chart
+    cpuChart = new Chart(ctx, {
+        type: 'line',
+        data: cpuData,
+        options: {
+            responsive: true,
+            maintainAspectRatio: false, // ✅ allow container height control
+            scales: {
+                x: { title: { display: true, text: 'Time' } },
+                y: { min: 0, max: 100, title: { display: true, text: 'CPU Usage (%)' } }
+            }
+        }
+    });
+
+    // Fetch CPU data
+    const fetchCpu = async () => {
+        try {
+            const res = await fetch('/cpu', { headers: { 'Authorization': 'Bearer ' + jwtToken } });
+            if (!res.ok) throw new Error('Access denied');
+
+            const data = await res.json();
+            const cpuValue = parseFloat(data.cpuUsage.toString().replace('%',''));
+            const timestamp = new Date().toLocaleTimeString();
+
+            if (cpuData.labels.length >= 12) {
+                cpuData.labels.shift();
+                cpuData.datasets[0].data.shift();
+            }
+
+            cpuData.labels.push(timestamp);
+            cpuData.datasets[0].data.push(cpuValue);
+            cpuChart.update();
+
+            // Adjust panel height if chart height changes
+            // if (!isMobile) adminPanel.style.height = wrapper.scrollHeight + 50 + 'px';
+        } catch(err) { console.error(err); }
+    };
+
+    fetchCpu();
+    clearInterval(intervalId);
+    intervalId = setInterval(fetchCpu, 5000);
+});
+
+
+// Login handler
+loginForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const formData = new FormData(loginForm);
+    const username = formData.get('username');
+    const password = formData.get('password');
+
+    try {
+        const res = await fetch('/login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ username, password })
+        });
+        const result = await res.json();
+
+        if (result.token) {
+            jwtToken = result.token;
+            status.textContent = '✅ Login successful!';
+            loginForm.style.display = 'none';
+            uploadForm.style.display = 'block';
+            logsIcon.style.display = 'block';
+            setTimeout(() => {
+                status.textContent = '';
+            }, 2000);
+            const payload = JSON.parse(atob(jwtToken.split('.')[1]));
+            if (payload.role === 'admin') {
+                adminIcon.style.display = 'block';
+            }
+        } else {
+            status.textContent = '❌ Login failed!';
+            setTimeout(() => {
+                status.textContent = '';
+            }, 2000);
+        }
+    } catch (err) {
+        console.error(err);
+        status.textContent = '❌ Login error!';
+        setTimeout(() => {
+                status.textContent = '';
+        }, 2000);
+    }
+});
+
+
+uploadForm.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  status.textContent = 'Uploading & Transcoding... ⏳';
+  downloadLink.style.display = 'none';
+
+  const fileInput = uploadForm.querySelector('input[type="file"]');
+  if (!fileInput.files.length) {
+    status.textContent = '❌ Select a file first!';
+    return;
+  }
+
+  const resolution = uploadForm.querySelector('select[name="resolution"]').value;
+  if (!resolution) {
+    status.textContent = '❌ Select a resolution!';
+    return;
+  }
+
+  const formData = new FormData();
+  formData.append('video', fileInput.files[0]);
+  formData.append('resolution', resolution);
+
+  try {
+    const response = await fetch('/upload', {
+      method: 'POST',
+      body: formData
+    });
+
+    const result = await response.json();
+
+    if (result.file) {
+      status.textContent = '✅ Transcoding completed!';
+      downloadLink.href = `/download/${result.file}`;
+      downloadLink.style.display = 'block';
+    } else {
+      status.textContent = '❌ Error: ' + (result.error || 'Unknown');
+    }
+  } catch (error) {
+    console.error(error);
+    status.textContent = '❌ Something went wrong!';
+  }
+});
+
+// // Upload handler
+// uploadForm.addEventListener('submit', async (e) => {
+//   e.preventDefault();
+//   console.log('UPLOAD FORM SUBMIT HIT ✅');
+
+//   if (!jwtToken) {
+//     status.textContent = '❌ Login first!';
+//     return;
+//   }
+
+//   const fileInput = uploadForm.querySelector('input[type="file"]');
+//   if (!fileInput.files.length) {
+//     status.textContent = '❌ Select a file first!';
+//     return;
+//   }
+
+//   const formData = new FormData();
+//   formData.append('video', fileInput.files[0]); // dynamic, works for any video
+
+//   status.textContent = 'Uploading & Transcoding... ⏳';
+//   downloadLink.style.display = 'none';
+
+//   try {
+//     const res = await fetch('/upload', {
+//       method: 'POST',
+//       headers: { 'Authorization': 'Bearer ' + jwtToken },
+//       body: formData
+//     });
+
+//     if (!res.ok) {
+//       const err = await res.json();
+//       status.textContent = '❌ Error: ' + (err.error || 'Unknown');
+//       return;
+//     }
+
+//     const result = await res.json();
+//     status.textContent = '✅ Transcoding completed!';
+//     downloadLink.href = `/download/${result.file}`;
+//     downloadLink.style.display = 'block';
+//   } catch (err) {
+//     console.error(err);
+//     status.textContent = '❌ Upload failed!';
+//   }
+// });
+
+
+
+// Initialize responsiveness
+window.addEventListener("resize", handleResize);
+window.addEventListener("load", handleResize);
+
+</script>
+
+</body>
+</html>
