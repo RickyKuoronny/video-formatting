@@ -414,7 +414,7 @@ uploadForm.addEventListener('submit', async (e) => {
   formData.append('resolution', resolution);
 
   try {
-    const response = await fetch('/upload', {
+    const response = await fetch('http://ec2-13-210-217-241.ap-southeast-2.compute.amazonaws.com:3000/upload', {
       method: 'POST',
       body: formData
     });
