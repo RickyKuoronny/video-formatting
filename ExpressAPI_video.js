@@ -1,140 +1,141 @@
-const express = require('express');
-const multer = require('multer');
-const ffmpeg = require('fluent-ffmpeg');
-const ffmpegPath = require('ffmpeg-static');
-const fs = require('fs');
-const path = require('path');
-const cors = require('cors');
-const jwt = require('jsonwebtoken');
-const os = require('os-utils');
+import express from "express";
+import multer from "multer";
+import jwt from "jsonwebtoken";
+import bcrypt from "bcryptjs";
+import fs from "fs";
+import path from "path";
+import cors from "cors";
+import os from "os-utils";
+import { spawn } from "child_process";
 
-ffmpeg.setFfmpegPath(ffmpegPath);
 const app = express();
 const PORT = 3000;
-const SECRET = 'mysecretkey'; // keep it secret in production
+const SECRET_KEY = "supersecretkey"; // Change in production
+const UPLOADS_DIR = path.join(process.cwd(), "uploads");
+const OUTPUT_DIR = path.join(process.cwd(), "output");
 
-app.use(cors());
+if (!fs.existsSync(UPLOADS_DIR)) fs.mkdirSync(UPLOADS_DIR);
+if (!fs.existsSync(OUTPUT_DIR)) fs.mkdirSync(OUTPUT_DIR);
+
+// Middlewares
 app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
-app.use(express.static('public')); // serve index.html
+app.use(cors());
+app.use("/download", express.static(OUTPUT_DIR));
 
-const upload = multer({ dest: 'uploads/' });
-const LOG_FILE = path.join(__dirname, 'transcodeLogs.json');
+// Multer setup
+const storage = multer.diskStorage({
+    destination: UPLOADS_DIR,
+    filename: (req, file, cb) => {
+        const ext = path.extname(file.originalname);
+        cb(null, `${Date.now()}${ext}`);
+    }
+});
+const upload = multer({ storage });
 
-if (!fs.existsSync(LOG_FILE)) fs.writeFileSync(LOG_FILE, JSON.stringify([]));
-
-// Simple user database
+// Dummy users (replace with DB later)
 const users = [
-  { username: 'user1', password: 'pass1', role: 'standard' },
-  { username: 'admin', password: 'adminpass', role: 'admin' }
+    { username: "admin", password: bcrypt.hashSync("admin123", 10), role: "admin" },
+    { username: "user", password: bcrypt.hashSync("user123", 10), role: "user" }
 ];
 
-// LOGIN endpoint
-app.post('/login', (req, res) => {
-  const { username, password } = req.body;
-  const user = users.find(u => u.username === username && u.password === password);
-  if (!user) return res.status(401).json({ error: 'Invalid credentials' });
-  
-  const token = jwt.sign({ username: user.username, role: user.role }, SECRET, { expiresIn: '1h' });
-  res.json({ token });
-});
+// Transcoding logs (in-memory)
+const logs = [];
 
-// Middleware to protect routes
-function authenticate(req, res, next) {
-  const authHeader = req.headers['authorization'];
-  if (!authHeader) return res.status(401).json({ error: 'No token provided' });
+// Middleware: Verify JWT
+const verifyToken = (req, res, next) => {
+    const authHeader = req.headers["authorization"];
+    if (!authHeader) return res.status(401).json({ error: "No token provided" });
 
-  const token = authHeader.split(' ')[1];
-  jwt.verify(token, SECRET, (err, decoded) => {
-    if (err) return res.status(401).json({ error: 'Invalid token' });
-    req.user = decoded;
+    const token = authHeader.split(" ")[1];
+    jwt.verify(token, SECRET_KEY, (err, decoded) => {
+        if (err) return res.status(403).json({ error: "Invalid token" });
+        req.user = decoded;
+        next();
+    });
+};
+
+// Middleware: Check Admin
+const verifyAdmin = (req, res, next) => {
+    if (req.user.role !== "admin") {
+        return res.status(403).json({ error: "Access denied" });
+    }
     next();
-  });
-}
+};
 
-// UPLOAD + TRANSCODE (protected)
-app.post('/upload', authenticate, upload.single('video'), (req, res) => {
-    const { resolution } = req.body;
-    if (!req.file || !resolution) return res.status(400).json({ error: 'Missing file or resolution' });
+// ==================== ROUTES ====================
 
-    const inputPath = req.file.path;
-    const outputFile = `output_${Date.now()}.mp4`;
-    const outputDir = path.join(__dirname, 'outputs');
-    if (!fs.existsSync(outputDir)) fs.mkdirSync(outputDir);
-    const outputPath = path.join(outputDir, outputFile);
+// Login
+app.post("/login", (req, res) => {
+    const { username, password } = req.body;
+    const user = users.find(u => u.username === username);
 
-    console.log(`Starting transcoding for ${inputPath} to resolution ${resolution}...`);
+    if (!user) return res.status(401).json({ error: "Invalid credentials" });
 
-    const startTime = new Date().toISOString();
+    const isMatch = bcrypt.compareSync(password, user.password);
+    if (!isMatch) return res.status(401).json({ error: "Invalid credentials" });
 
-    ffmpeg(inputPath)
-        .setFfmpegPath(ffmpegPath)
-        .videoCodec('libx264')
-        .size(resolution)
-        .on('start', commandLine => {
-            console.log('FFmpeg command:', commandLine);
-        })
-        .on('progress', progress => {
-            // Sometimes progress.percent is undefined, handle safely
-            const percent = progress.percent ? progress.percent.toFixed(2) : 0;
-            console.log(`Processing: ${percent}% done`);
-        })
-        .on('error', err => {
-            console.error('Transcoding error:', err.message);
-            res.status(500).json({ error: 'Transcoding failed: ' + err.message });
-        })
-        .on('end', () => {
-            const endTime = new Date().toISOString();
-            console.log('Transcoding finished successfully.');
-
-            // Save log
-            const logs = JSON.parse(fs.readFileSync(LOG_FILE, 'utf8'));
-            logs.push({
-                input: inputPath,
-                output: outputPath,
-                resolution,
-                startedAt: startTime,
-                completedAt: endTime,
-                user: req.user.username
-            });
-            fs.writeFileSync(LOG_FILE, JSON.stringify(logs, null, 2));
-
-            res.json({ message: 'Transcoding completed!', outputFile: `/download/${outputFile}` });
-        })
-        .save(outputPath);
+    const token = jwt.sign({ username, role: user.role }, SECRET_KEY, { expiresIn: "2h" });
+    res.json({ token });
 });
 
-
-
-// Admin-only CPU endpoint
-app.get('/cpu', authenticate, (req, res) => {
-  // Only allow admins
-  if (req.user.role !== 'admin') {
-    return res.status(403).json({ error: 'Access denied. Admins only.' });
-  }
-
-  os.cpuUsage((v) => {
-    res.json({ cpuUsage: (v * 100).toFixed(2) + '%' });
-  });
-});
-
-
-// Admin-only Log endpoint 
-app.get('/logs', authenticate, (req, res) => {
-    if (req.user.role !== 'admin') {
-        return res.status(403).json({ error: 'Access denied: Admins only' });
-    }
-
+// Upload + Transcode
+app.post("/upload", verifyToken, upload.single("video"), async (req, res) => {
     try {
-        const logs = fs.existsSync(LOG_FILE) ? JSON.parse(fs.readFileSync(LOG_FILE, 'utf8')) : [];
-        res.json(logs);
+        const { resolution } = req.body;
+        const inputPath = req.file.path;
+        const outputFile = `${Date.now()}-${resolution}.mp4`;
+        const outputPath = path.join(OUTPUT_DIR, outputFile);
+
+        const startTime = new Date();
+        const ffmpeg = spawn("ffmpeg", ["-i", inputPath, "-s", resolution, "-c:a", "copy", outputPath]);
+
+        ffmpeg.on("close", code => {
+            fs.unlinkSync(inputPath);
+
+            if (code !== 0) {
+                return res.status(500).json({ error: "Transcoding failed" });
+            }
+
+            logs.push({
+                user: req.user.username,
+                input: req.file.originalname,
+                output: outputFile,
+                resolution,
+                startedAt: startTime.toISOString(),
+                completedAt: new Date().toISOString()
+            });
+
+            res.json({ file: outputFile });
+        });
+
     } catch (err) {
-        res.status(500).json({ error: 'Failed to fetch logs' });
+        console.error(err);
+        res.status(500).json({ error: "Server error" });
     }
 });
 
+// Download transcoded video
+app.get("/download/:file", (req, res) => {
+    const filePath = path.join(OUTPUT_DIR, req.params.file);
+    if (!fs.existsSync(filePath)) {
+        return res.status(404).json({ error: "File not found" });
+    }
+    res.download(filePath);
+});
 
-app.get('/download/:fileName', (req, res) => res.download(path.join(__dirname, 'outputs', req.params.fileName)));
-app.get('/logs', authenticate, (req, res) => res.json(JSON.parse(fs.readFileSync(LOG_FILE, 'utf8'))));
+// Get CPU usage (Admin only)
+app.get("/cpu", verifyToken, verifyAdmin, (req, res) => {
+    os.cpuUsage(cpu => {
+        res.json({ cpuUsage: (cpu * 100).toFixed(2) });
+    });
+});
 
-app.listen(PORT, '0.0.0.0', () => console.log(`Server running on http://localhost:${PORT}`));
+// Get transcoding logs (Admin only)
+app.get("/logs", verifyToken, verifyAdmin, (req, res) => {
+    res.json(logs);
+});
+
+// Start Server
+app.listen(PORT, () => {
+    console.log(`🚀 Server running at http://localhost:${PORT}`);
+});
