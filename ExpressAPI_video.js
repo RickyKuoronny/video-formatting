@@ -10,71 +10,36 @@ const os = require('os-utils');
 ffmpeg.setFfmpegPath('/usr/bin/ffmpeg');
 const app = express();
 const PORT = 3000;
-const SECRET = 'mysecretkey';
+const SECRET = 'mysecretkey'; // keep it secret in production
 
+app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
-app.use(express.static('public'));
+app.use(express.static('public')); // serve index.html
 
-// --- Paths for folders ---
-const UPLOADS_DIR = path.join(__dirname, 'uploads');
-const OUTPUTS_DIR = path.join(__dirname, 'outputs');
-
-// Create folders if they don't exist
-[UPLOADS_DIR, OUTPUTS_DIR].forEach(dir => {
-  if (!fs.existsSync(dir)) {
-    fs.mkdirSync(dir, { recursive: true });
-    console.log(`✅ Created folder: ${dir}`);
-  }
-});
-
-// ✅ CORS setup
-const corsOptions = {
-  origin: '*', // Or restrict to your front-end domain
-  methods: ['GET', 'POST', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization']
-};
-app.use(cors(corsOptions));
-
-// Handle preflight for /upload specifically
-app.options('/upload', cors(corsOptions));
-
-const upload = multer({
-  dest: UPLOADS_DIR,
-  limits: {
-    fileSize: 500 * 1024 * 1024 // 500MB max upload
-  },
-  fileFilter: (req, file, cb) => {
-    const allowedExt = ['.mp4', '.mov']; // ✅ Only allow mp4 + mov
-    const ext = path.extname(file.originalname).toLowerCase();
-    if (!allowedExt.includes(ext)) {
-      return cb(new Error('Only .mp4 and .mov video files are allowed'), false);
-    }
-    cb(null, true);
-  }
-});
-
+const upload = multer({ dest: 'uploads/' });
 const LOG_FILE = path.join(__dirname, 'transcodeLogs.json');
+
 if (!fs.existsSync(LOG_FILE)) fs.writeFileSync(LOG_FILE, '[]', 'utf8');
 
-// --- Users ---
+// Simple user database
 const users = [
   { username: 'user1', password: 'pass1', role: 'standard' },
   { username: 'admin', password: 'adminpass', role: 'admin' }
 ];
 
-// --- LOGIN ---
+// LOGIN endpoint
 app.post('/login', (req, res) => {
   console.log('login HIT ✅');
   const { username, password } = req.body;
   const user = users.find(u => u.username === username && u.password === password);
   if (!user) return res.status(401).json({ error: 'Invalid credentials' });
-
+  
   const token = jwt.sign({ username: user.username, role: user.role }, SECRET, { expiresIn: '1h' });
   res.json({ token });
 });
 
-// --- AUTH MIDDLEWARE ---
+// Middleware to protect routes
 function authenticate(req, res, next) {
   const authHeader = req.headers['authorization'];
   if (!authHeader) return res.status(401).json({ error: 'No token provided' });
@@ -87,46 +52,90 @@ function authenticate(req, res, next) {
   });
 }
 
-// --- UPLOAD + TRANSCODE ---
+// UPLOAD + TRANSCODE (protected)
+// UPLOAD + TRANSCODE (protected)
 app.post('/upload', authenticate, upload.single('video'), (req, res) => {
-  console.log('UPLOAD ROUTE HIT ✅', req.file);
+  console.log('UPLOAD HIT ✅');
+  console.log('REQ.FILE:', req.file);
+  console.log('REQ.BODY:', req.body);
 
-  if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
+  if (!req.file || req.file.size === 0) {
+    console.error('No file uploaded or empty file ❌');
+    return res.status(400).json({ error: 'No file uploaded or empty file' });
+  }
 
-  const inputPath = req.file.path;
-  const outputFileName = `${Date.now()}-${req.file.originalname}`;
-  const outputPath = path.join(OUTPUTS_DIR, outputFileName);
+  try {
+    // Ensure outputs directory exists
+    const outputDir = path.join(__dirname, 'outputs');
+    if (!fs.existsSync(outputDir)) fs.mkdirSync(outputDir);
 
-  ffmpeg(inputPath)
-    .videoCodec('libx264')
-    .audioCodec('aac')
-    .outputOptions('-preset', 'fast')
-    .save(outputPath)
-    .on('start', cmd => console.log('FFmpeg command:', cmd))
-    .on('end', () => {
-      try { fs.unlinkSync(inputPath); } catch(e){ console.error(e); }
+    // Preserve file extension for FFmpeg
+    const ext = path.extname(req.file.originalname);
+    const inputPath = req.file.path + ext;
+    fs.renameSync(req.file.path, inputPath);
 
-      const logs = JSON.parse(fs.readFileSync(LOG_FILE, 'utf8'));
-      logs.push({ 
-        user: req.user.username, 
-        file: outputFileName, 
-        input: req.file.originalname,
-        resolution: req.body.resolution || 'original',
-        startedAt: new Date().toISOString(),
-        completedAt: new Date().toISOString()
-      });
-      fs.writeFileSync(LOG_FILE, JSON.stringify(logs, null, 2));
+    const outputFileName = `${Date.now()}-${req.file.originalname}`;
+    const outputPath = path.join(outputDir, outputFileName);
 
-      res.json({ file: outputFileName });
-    })
-    .on('error', (err) => {
-      try { fs.unlinkSync(inputPath); } catch(e){ console.error(e); }
-      res.status(500).json({ error: 'Transcoding failed', details: err.message });
-    });
+    ffmpeg(inputPath)
+      .videoCodec('libx264')
+      .audioCodec('aac')
+      .outputOptions('-preset', 'fast')
+      .on('start', cmd => console.log('FFmpeg command:', cmd))
+      .on('end', () => {
+        // Remove the input file
+        fs.unlinkSync(inputPath);
+
+        // Log the transcode
+        const logs = JSON.parse(fs.readFileSync(LOG_FILE, 'utf8'));
+        logs.push({ user: req.user.username, file: outputFileName, timestamp: new Date().toISOString() });
+        fs.writeFileSync(LOG_FILE, JSON.stringify(logs, null, 2));
+
+        res.json({ message: 'File transcoded successfully', outputFile: outputFileName });
+      })
+      .on('error', (err) => {
+        console.error('FFmpeg error:', err);
+        if (fs.existsSync(inputPath)) fs.unlinkSync(inputPath);
+        res.status(500).json({ error: 'Transcoding failed', details: err.message });
+      })
+      .save(outputPath);
+
+  } catch (err) {
+    console.error('Upload handler error:', err);
+    res.status(500).json({ error: 'Server error', details: err.message });
+  }
 });
 
 
-// --- OTHER ENDPOINTS ---
+
+// Admin-only CPU endpoint
+app.get('/cpu', authenticate, (req, res) => {
+  // Only allow admins
+  if (req.user.role !== 'admin') {
+    return res.status(403).json({ error: 'Access denied. Admins only.' });
+  }
+
+  os.cpuUsage((v) => {
+    res.json({ cpuUsage: (v * 100).toFixed(2) + '%' });
+  });
+});
+
+
+// Admin-only Log endpoint 
+app.get('/logs', authenticate, (req, res) => {
+    if (req.user.role !== 'admin') {
+        return res.status(403).json({ error: 'Access denied: Admins only' });
+    }
+
+    try {
+        const logs = fs.existsSync(LOG_FILE) ? JSON.parse(fs.readFileSync(LOG_FILE, 'utf8')) : [];
+        res.json(logs);
+    } catch (err) {
+        res.status(500).json({ error: 'Failed to fetch logs' });
+    }
+});
+
+
 app.get('/download/:fileName', (req, res) => res.download(path.join(__dirname, 'outputs', req.params.fileName)));
 
 app.listen(PORT, '0.0.0.0', () => console.log(`Server running on http://localhost:${PORT}`));
