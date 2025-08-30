@@ -393,30 +393,47 @@ loginForm.addEventListener('submit', async (e) => {
 
 
 uploadForm.addEventListener('submit', async (e) => {
-      e.preventDefault();
-      status.textContent = 'Uploading & Transcoding... ⏳';
-      downloadLink.style.display = 'none';
+  e.preventDefault();
+  status.textContent = 'Uploading & Transcoding... ⏳';
+  downloadLink.style.display = 'none';
 
-      const formData = new FormData(form);
-      try {
-        const response = await fetch('/upload', {
-          method: 'POST',
-          body: formData
-        });
+  const fileInput = uploadForm.querySelector('input[type="file"]');
+  if (!fileInput.files.length) {
+    status.textContent = '❌ Select a file first!';
+    return;
+  }
 
-        const result = await response.json();
+  const resolution = uploadForm.querySelector('select[name="resolution"]').value;
+  if (!resolution) {
+    status.textContent = '❌ Select a resolution!';
+    return;
+  }
 
-        if (result.outputFile) {
-          status.textContent = '✅ Transcoding completed!';
-          downloadLink.href = result.outputFile;
-          downloadLink.style.display = 'block';
-        } else {
-          status.textContent = '❌ Error: ' + result.error;
-        }
-      } catch (error) {
-        status.textContent = '❌ Something went wrong!';
-      }
+  const formData = new FormData();
+  formData.append('video', fileInput.files[0]);
+  formData.append('resolution', resolution);
+
+  try {
+    const response = await fetch('/upload', {
+      method: 'POST',
+      body: formData
     });
+
+    const result = await response.json();
+
+    if (result.file) {
+      status.textContent = '✅ Transcoding completed!';
+      downloadLink.href = `/download/${result.file}`;
+      downloadLink.style.display = 'block';
+    } else {
+      status.textContent = '❌ Error: ' + (result.error || 'Unknown');
+    }
+  } catch (error) {
+    console.error(error);
+    status.textContent = '❌ Something went wrong!';
+  }
+});
+
 // // Upload handler
 // uploadForm.addEventListener('submit', async (e) => {
 //   e.preventDefault();
