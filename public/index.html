@@ -1,165 +1,238 @@
 <!doctype html>
-<html lang="en">
+<html>
 <head>
   <meta charset="utf-8" />
+  <title>Video Resizer Admin</title>
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Video Uploader</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <style>
-    :root { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; }
-    body { margin: 0; background: #0b1020; color: #f4f6fb; }
-    .wrap { max-width: 820px; margin: 40px auto; padding: 24px; }
-    .card { background: #111735; border: 1px solid #1f264d; border-radius: 16px; padding: 24px; box-shadow: 0 8px 24px rgba(0,0,0,.25); }
-    h1 { margin: 0 0 12px; font-size: 24px; font-weight: 700; }
-    p { color: #b7c0e3; margin: 0 0 16px; }
-    .drop {
-      border: 2px dashed #3c4b8a; border-radius: 16px; padding: 32px; text-align: center;
-      background: #0f1733; transition: .2s border-color, .2s background;
-    }
-    .drop.highlight { border-color: #78a6ff; background: #101d47; }
-    .row { display: flex; gap: 12px; align-items: center; justify-content: center; margin-top: 12px; flex-wrap: wrap; }
-    button, label.btn {
-      background: #2463ff; color: white; border: 0; padding: 10px 16px; border-radius: 999px;
-      font-weight: 600; cursor: pointer; transition: .2s transform, .2s opacity;
-    }
-    button:disabled, label.btn.disabled { opacity: .6; cursor: not-allowed; }
-    input[type=file]{ display:none; }
-    .select {
-      padding: 8px 12px;
-      background: #0b1330;
-      border: 1px solid #1f264d;
-      color: #f4f6fb;
-      border-radius: 8px;
-      font-size: 14px;
-    }
-    .bar { height: 12px; width: 0%; background: linear-gradient(90deg,#62a3ff,#9ed0ff); border-radius: 12px; }
-    .muted { color: #92a0c6; font-size: 14px; }
-    video { width: 100%; max-height: 420px; margin-top: 16px; border-radius: 12px; background:#000; }
-    .tiny { font-size: 12px; color:#8290bc; margin-top:8px }
+    body { font-family: Arial, sans-serif; max-width:800px; margin:20px auto; padding:0 16px; }
+    input, select, button { padding:8px; margin:6px 0; width:100%; box-sizing:border-box; }
+    label { font-weight:600; display:block; margin-top:8px; }
+    .result { margin-top:12px; word-break:break-all; }
+    #uploader, #adminPanel, #adminBtn { display:none; margin-top:20px; }
+    canvas { max-width:100%; }
+    table { width:100%; border-collapse:collapse; margin-top:10px; }
+    th, td { border:1px solid #ccc; padding:6px; text-align:left; }
+    th { background:#eee; }
   </style>
 </head>
 <body>
-  <div class="wrap">
-    <div class="card">
-      <h1>Upload a video</h1>
-      <p>Drag & drop or choose a file. Most formats work: mp4, mov, mkv, avi, webm, etc.</p>
+  <h1>Video Resizer</h1>
 
-      <div id="drop" class="drop">
-        <div>Drop your video here</div>
-        <div class="row" style="margin-top:10px">
-          <label class="btn" id="chooseLabel">
-            Choose file
-            <input id="file" type="file" accept="video/*" />
-          </label>
-          <select id="resolution" class="select">
-            <option value="1080">1080p</option>
-            <option value="720" selected>720p</option>
-            <option value="480">480p</option>
-            <option value="360">360p</option>
-          </select>
-          <button id="uploadBtn" disabled>Upload</button>
-        </div>
-        <div id="chosen" class="muted" style="margin-top:8px"></div>
+  <!-- LOGIN -->
+  <div id="loginForm">
+    <h2>Login</h2>
+    <label>Username</label>
+    <input id="username" type="text" />
+    <label>Password</label>
+    <input id="password" type="password" />
+    <button id="loginBtn">Login</button>
+  </div>
 
-        <div id="progressWrap" style="margin-top:16px; display:none">
-          <div class="muted" id="progressText">Uploading…</div>
-          <div style="background:#0b1330;border-radius:12px;overflow:hidden;margin-top:8px">
-            <div class="bar" id="bar"></div>
-          </div>
-        </div>
+  <!-- UPLOADER -->
+  <div id="uploader">
+    <h2>Upload Video</h2>
+    <label>Video file</label>
+    <input id="video" type="file" accept="video/*" />
+    <label>Resolution</label>
+    <select id="resolution">
+      <option value="">-- Select Resolution --</option>
+        <option value="640x360">360p</option>
+        <option value="1280x720">720p</option>
+        <option value="1920x1080">1080p</option>
+    </select>
+    <button id="uploadBtn">Upload & Convert</button>
 
-        <div id="result"></div>
-      </div>
+    <!-- Progress bar -->
+    <div style="margin-top:10px; display:flex; align-items:center;">
+        <progress id="uploadProgress" value="0" max="100" style="flex:1; margin-right:10px;"></progress>
+        <span id="progressText">0%</span>
     </div>
+
+    <div id="status" class="result"></div>
+  </div>
+
+  <!-- ADMIN BUTTON -->
+  <button id="adminBtn">Admin</button>
+
+  <!-- ADMIN PANEL -->
+  <div id="adminPanel">
+    <h2>Admin Panel</h2>
+    <h3>CPU Usage (Live)</h3>
+    <canvas id="cpuChart"></canvas>
+    <h3>Conversion Logs</h3>
+    <table id="logsTable">
+      <thead>
+        <tr>
+          <th>User</th>
+          <th>Input</th>
+          <th>Output</th>
+          <th>Resolution</th>
+          <th>Started At</th>
+          <th>Completed At</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
   </div>
 
   <script>
-    const drop = document.getElementById('drop');
-    const fileInput = document.getElementById('file');
-    const uploadBtn = document.getElementById('uploadBtn');
-    const chosen = document.getElementById('chosen');
-    const bar = document.getElementById('bar');
-    const progressWrap = document.getElementById('progressWrap');
+    let jwtToken = null;
+    let cpuChart = null;
+    const cpuData = { labels: [], datasets: [{ label: 'CPU Load', data: [], borderColor: 'rgb(75, 192, 192)', tension: 0.3 }] };
+    let cpuInterval = null;
+
+    // LOGIN
+    document.getElementById('loginBtn').addEventListener('click', async () => {
+      const username = document.getElementById('username').value;
+      const password = document.getElementById('password').value;
+      if (!username || !password) { alert('Enter username and password'); return; }
+
+      try {
+        const resp = await fetch('/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username, password })
+        });
+        const json = await resp.json();
+        if (!resp.ok) throw new Error(json.error || 'Login failed');
+
+        jwtToken = json.token;
+        alert('Login successful!');
+
+        // Hide login form, show uploader
+        document.getElementById('loginForm').style.display = 'none';
+        document.getElementById('uploader').style.display = 'block';
+
+        // Only show admin button if admin
+        const payload = JSON.parse(atob(jwtToken.split('.')[1]));
+        if (payload.role === 'admin') {
+          document.getElementById('adminBtn').style.display = 'block';
+        }
+      } catch (err) { alert('Login error: ' + (err.message || err)); }
+    });
+
+    // UPLOAD
+    document.getElementById('uploadBtn').addEventListener('click', () => {
+    if (!jwtToken) { alert('Please login first'); return; }
+    const fileEl = document.getElementById('video');
+    const res = document.getElementById('resolution').value;
+    if (!fileEl.files.length) { alert('Choose a video'); return; }
+    if (!res) { alert('Select resolution'); return; }
+
+    // Disable inputs while uploading
+    fileEl.disabled = true;
+    document.getElementById('resolution').disabled = true;
+    document.getElementById('uploadBtn').disabled = true;
+
+    const fd = new FormData();
+    fd.append('video', fileEl.files[0]);
+    fd.append('resolution', res);
+
+    const statusEl = document.getElementById('status');
+    const progressBar = document.getElementById('uploadProgress');
     const progressText = document.getElementById('progressText');
-    const result = document.getElementById('result');
-    const resolution = document.getElementById('resolution');
-    const chooseLabel = document.getElementById('chooseLabel');
 
-    let currentFile = null;
-    let uploading = false;
+    progressBar.value = 0;
+    progressText.textContent = '0%';
+    statusEl.textContent = 'Uploading...';
 
-    function setFile(f){
-      if (uploading) return;
-      currentFile = f || null;
-      chosen.textContent = f ? `${f.name} • ${(f.size/1048576).toFixed(2)} MB` : "";
-      uploadBtn.disabled = !f;
-      result.innerHTML = "";
+    // Use XMLHttpRequest to track progress
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', '/convert', true);
+    xhr.setRequestHeader('Authorization', 'Bearer ' + jwtToken);
+
+    xhr.upload.onprogress = (event) => {
+        if (event.lengthComputable) {
+        const percent = Math.round((event.loaded / event.total) * 100);
+        progressBar.value = percent;
+        progressText.textContent = percent + '%';
+        }
+    };
+
+    xhr.onload = () => {
+        fileEl.disabled = false;
+        document.getElementById('resolution').disabled = false;
+        document.getElementById('uploadBtn').disabled = false;
+
+        if (xhr.status === 200) {
+        const json = JSON.parse(xhr.responseText);
+        statusEl.innerHTML = 'Converted! <a href="' + json.download + '" target="_blank">Download here</a>';
+        } else {
+        let errMsg = 'Upload failed';
+        try { errMsg = JSON.parse(xhr.responseText).error || errMsg; } catch {}
+        statusEl.textContent = 'Error: ' + errMsg;
+        }
+    };
+
+    xhr.onerror = () => {
+        fileEl.disabled = false;
+        document.getElementById('resolution').disabled = false;
+        document.getElementById('uploadBtn').disabled = false;
+        statusEl.textContent = 'Error: Upload failed';
+    };
+
+    xhr.send(fd);
+    });
+
+
+    // ADMIN BUTTON CLICK
+    document.getElementById('adminBtn').addEventListener('click', async () => {
+      document.getElementById('adminPanel').style.display = 'block';
+      await fetchLogs();
+      initCpuChart();
+      if (!cpuInterval) cpuInterval = setInterval(updateCpuChart, 5000);
+    });
+
+    // FETCH LOGS
+    async function fetchLogs() {
+      try {
+        const resp = await fetch('/logs', { headers: { 'Authorization': 'Bearer ' + jwtToken } });
+        const json = await resp.json();
+        if (!resp.ok) throw new Error(json.error || 'Failed to fetch logs');
+
+        const tbody = document.querySelector('#logsTable tbody');
+        tbody.innerHTML = '';
+        json.logs.forEach(log => {
+          const tr = document.createElement('tr');
+          tr.innerHTML = `
+            <td>${log.user}</td>
+            <td>${log.input}</td>
+            <td>${log.output}</td>
+            <td>${log.resolution}</td>
+            <td>${log.startedAt}</td>
+            <td>${log.completedAt}</td>
+          `;
+          tbody.appendChild(tr);
+        });
+
+        // Initialize CPU chart with first value
+        cpuData.datasets[0].data = json.cpuUsagePercent;
+        cpuData.labels = [new Date().toLocaleTimeString()];
+      } catch (err) { console.error('Error fetching logs:', err); }
     }
 
-    fileInput.addEventListener('change', e => setFile(e.target.files[0]));
+    // CPU Chart
+    function initCpuChart() {
+      const ctx = document.getElementById('cpuChart').getContext('2d');
+      cpuChart = new Chart(ctx, { type: 'line', data: cpuData, options: { responsive:true, animation:false, scales:{ y:{ min:0 } } } });
+    }
 
-    ['dragenter','dragover'].forEach(ev => drop.addEventListener(ev, e => {e.preventDefault(); drop.classList.add('highlight')}))
-    ;['dragleave','drop'].forEach(ev => drop.addEventListener(ev, e => {e.preventDefault(); drop.classList.remove('highlight')}))
-    drop.addEventListener('drop', e => {
-      const f = e.dataTransfer.files[0];
-      if (f && !uploading) setFile(f);
-    });
-
-    uploadBtn.addEventListener('click', () => {
-      if (!currentFile || uploading) return;
-      uploading = true;
-
-      const form = new FormData();
-      form.append('video', currentFile);
-      form.append('resolution', resolution.value);
-
-      // Disable inputs
-      uploadBtn.disabled = true;
-      fileInput.disabled = true;
-      chooseLabel.classList.add("disabled");
-
-      progressWrap.style.display = 'block';
-      bar.style.width = '0%';
-      progressText.textContent = 'Uploading…';
-
-      const xhr = new XMLHttpRequest();
-      xhr.open('POST', '/upload', true);
-
-      xhr.upload.onprogress = (e) => {
-        if (e.lengthComputable) {
-          const pct = Math.round((e.loaded / e.total) * 100);
-          bar.style.width = pct + '%';
-          progressText.textContent = `Uploading… ${pct}%`;
+    async function updateCpuChart() {
+      try {
+        const resp = await fetch('/logs', { headers: { 'Authorization': 'Bearer ' + jwtToken } });
+        const json = await resp.json();
+        const now = new Date().toLocaleTimeString();
+        cpuData.labels.push(now);
+        cpuData.datasets[0].data.push(json.cpuUsagePercent[0]); // 1-min load
+        if (cpuData.labels.length > 20) {
+          cpuData.labels.shift();
+          cpuData.datasets[0].data.shift();
         }
-      };
-
-      xhr.onload = () => {
-        uploading = false;
-        fileInput.disabled = false;
-        chooseLabel.classList.remove("disabled");
-        if (xhr.status === 200) {
-          const { filename, url } = JSON.parse(xhr.responseText);
-          progressText.textContent = 'Done!';
-          result.innerHTML = `
-            <div class="muted" style="margin-top:12px">Uploaded as <strong>${filename}</strong></div>
-            <video controls src="${url}"></video>`;
-          setFile(null);
-          fileInput.value = "";
-        } else {
-          progressText.textContent = 'Upload failed.';
-          alert('Upload failed: ' + xhr.responseText);
-        }
-      };
-
-      xhr.onerror = () => {
-        uploading = false;
-        fileInput.disabled = false;
-        chooseLabel.classList.remove("disabled");
-        progressText.textContent = 'Upload failed.';
-        alert('Network error during upload.');
-      };
-
-      xhr.send(form);
-    });
+        cpuChart.update();
+      } catch(err) { console.error('CPU chart update error:', err); }
+    }
   </script>
 </body>
 </html>
