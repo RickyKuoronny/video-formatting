@@ -45,13 +45,15 @@ const upload = multer({
     fileSize: 500 * 1024 * 1024 // 500MB max upload
   },
   fileFilter: (req, file, cb) => {
-    // Only allow videos
-    if (!file.mimetype.startsWith('video/')) {
-      return cb(new Error('Only video files are allowed'), false);
+    const allowedExt = ['.mp4', '.mov']; // ✅ Only allow mp4 + mov
+    const ext = path.extname(file.originalname).toLowerCase();
+    if (!allowedExt.includes(ext)) {
+      return cb(new Error('Only .mp4 and .mov video files are allowed'), false);
     }
     cb(null, true);
   }
 });
+
 const LOG_FILE = path.join(__dirname, 'transcodeLogs.json');
 if (!fs.existsSync(LOG_FILE)) fs.writeFileSync(LOG_FILE, '[]', 'utf8');
 
